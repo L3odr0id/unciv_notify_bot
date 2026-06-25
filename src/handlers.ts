@@ -31,12 +31,6 @@ export function parseAdminSet(envValue: string | undefined): Set<string> {
   return set;
 }
 
-const REGISTER_RE = /Game:\s*(\S+)\s+User:\s*(\S+)/i;
-export function parseRegister(text: string): { gameId: string; userId: string } | null {
-  const m = text.match(REGISTER_RE);
-  return m ? { gameId: m[1], userId: m[2] } : null;
-}
-
 // A bare integer (optionally negative — Telegram group chat ids are negative) is a chat id; anything else is a handle.
 function parseBlockTarget(arg: string): { kind: 'chat'; chatId: number } | { kind: 'user'; username: string } {
   if (/^-?\d+$/.test(arg)) return { kind: 'chat', chatId: Number(arg) };
@@ -58,10 +52,8 @@ export const MIN_INTERVAL_SECONDS = 10;
 export const USAGE = [
   'Unciv turn-notifier bot.',
   '',
-  'Subscribe with:',
-  '  Game: <game_id> User: <user_id>',
-  '',
   'Commands:',
+  '  /subscribe <game_id> <user_id> — get notified on your turn',
   '  /list — your subscriptions',
   '  /my_subs — your subscriptions with live turn status',
   '  /unsubscribe <game_id> [user_id] — stop notifications',
@@ -194,25 +186,30 @@ export async function handleMessage(deps: HandlerDeps, msg: IncomingMsg): Promis
     return deps.reply(changes > 0 ? `Unblocked ${arg}.` : 'Not in blocklist.');
   }
 
-  const reg = parseRegister(text);
-  if (reg) {
-    const uname = normalizeUsername(msg.username ?? '');
-    if (isBlocked(deps.db, msg.chatId, uname)) return deps.reply('You are blocked.');
-    let preview: GamePreview;
-    try {
-      preview = await deps.fetchPreview(reg.gameId);
-    } catch (e) {
-      if (e instanceof GameNotFound) return deps.reply(`Game ${reg.gameId} not found.`);
-      return deps.reply('Could not reach the Unciv server, try again later.');
-    }
-    if (!preview.civilizations.some((c) => c.playerId === reg.userId)) {
-      log.debug(`register rejected: ${reg.userId} not in ${reg.gameId}`);
-      return deps.reply(`User ${reg.userId} is not a player in game ${reg.gameId}.`);
-    }
-    addSubscription(deps.db, msg.chatId, reg.gameId, reg.userId, uname);
-    log.info(`chat ${msg.chatId} registered ${reg.userId} in ${reg.gameId}`);
-    return deps.reply(`Subscribed: you'll be notified on ${reg.userId}'s turn in ${reg.gameId}.`);
+  if (text.startsWith('/subscribe')) {
+    const [, gameId, userId] = text.split(/\s+/);
+    if (!gameId || !userId) return deps.reply('Usage: /subscribe <game_id> <user_id>');
+    return subscribe(deps, msg, gameId, userId);
   }
 
   return deps.reply(USAGE);
+}
+
+async function subscribe(deps: HandlerDeps, msg: IncomingMsg, gameId: string, userId: string): Promise<void> {
+  const uname = normalizeUsername(msg.username ?? '');
+  if (isBlocked(deps.db, msg.chatId, uname)) return deps.reply('You are blocked.');
+  let preview: GamePreview;
+  try {
+    preview = await deps.fetchPreview(gameId);
+  } catch (e) {
+    if (e instanceof GameNotFound) return deps.reply(`Game ${gameId} not found.`);
+    return deps.reply('Could not reach the Unciv server, try again later.');
+  }
+  if (!preview.civilizations.some((c) => c.playerId === userId)) {
+    log.debug(`register rejected: ${userId} not in ${gameId}`);
+    return deps.reply(`User ${userId} is not a player in game ${gameId}.`);
+  }
+  addSubscription(deps.db, msg.chatId, gameId, userId, uname);
+  log.info(`chat ${msg.chatId} registered ${userId} in ${gameId}`);
+  return deps.reply(`Subscribed: you'll be notified on ${userId}'s turn in ${gameId}.`);
 }

@@ -6,7 +6,6 @@ import { GameNotFound } from './unciv';
 import {
   normalizeUsername,
   parseAdminSet,
-  parseRegister,
   handleMessage,
   HandlerDeps,
   formatDuration,
@@ -22,11 +21,6 @@ test('normalizeUsername strips @ and lowercases', () => {
 test('parseAdminSet splits and normalizes', () => {
   const s = parseAdminSet('@Alice, bob ,');
   assert.deepEqual([...s].sort(), ['alice', 'bob']);
-});
-
-test('parseRegister extracts game and user', () => {
-  assert.deepEqual(parseRegister('Game: abc User: xyz'), { gameId: 'abc', userId: 'xyz' });
-  assert.equal(parseRegister('hello'), null);
 });
 
 test('formatDuration short forms', () => {
@@ -61,16 +55,23 @@ function deps(over: Partial<HandlerDeps> = {}): { deps: HandlerDeps; out: string
   };
 }
 
-test('register valid user adds subscription and confirms', async () => {
+test('/subscribe adds subscription and confirms', async () => {
   const { deps: d, out } = deps();
-  await handleMessage(d, { chatId: 1, text: 'Game: g1 User: uA' });
+  await handleMessage(d, { chatId: 1, text: '/subscribe g1 uA' });
   assert.equal(listSubscriptions(d.db, 1).length, 1);
   assert.match(out[0], /subscribed/i);
 });
 
-test('register rejects user not in game', async () => {
+test('/subscribe without args shows usage', async () => {
   const { deps: d, out } = deps();
-  await handleMessage(d, { chatId: 1, text: 'Game: g1 User: nobody' });
+  await handleMessage(d, { chatId: 1, text: '/subscribe g1' });
+  assert.equal(listSubscriptions(d.db, 1).length, 0);
+  assert.match(out[0], /usage: \/subscribe/i);
+});
+
+test('/subscribe rejects user not in game', async () => {
+  const { deps: d, out } = deps();
+  await handleMessage(d, { chatId: 1, text: '/subscribe g1 nobody' });
   assert.equal(listSubscriptions(d.db, 1).length, 0);
   assert.match(out[0], /not a player/i);
 });
@@ -81,26 +82,26 @@ test('register reports game not found', async () => {
       throw new GameNotFound('g1');
     },
   });
-  await handleMessage(d, { chatId: 1, text: 'Game: g1 User: uA' });
+  await handleMessage(d, { chatId: 1, text: '/subscribe g1 uA' });
   assert.match(out[0], /not found/i);
 });
 
 test('unknown text returns usage', async () => {
   const { deps: d, out } = deps();
   await handleMessage(d, { chatId: 1, text: 'blah' });
-  assert.match(out[0], /Game:/);
+  assert.match(out[0], /\/subscribe/);
 });
 
 test('/list shows subscriptions', async () => {
   const { deps: d, out } = deps();
-  await handleMessage(d, { chatId: 1, text: 'Game: g1 User: uA' });
+  await handleMessage(d, { chatId: 1, text: '/subscribe g1 uA' });
   await handleMessage(d, { chatId: 1, text: '/list' });
   assert.match(out[1], /g1/);
 });
 
 test('/unsubscribe removes', async () => {
   const { deps: d, out } = deps();
-  await handleMessage(d, { chatId: 1, text: 'Game: g1 User: uA' });
+  await handleMessage(d, { chatId: 1, text: '/subscribe g1 uA' });
   await handleMessage(d, { chatId: 1, text: '/unsubscribe g1' });
   assert.equal(listSubscriptions(d.db, 1).length, 0);
   assert.match(out[1], /removed/i);
@@ -142,7 +143,7 @@ test('/my_subs with no subscriptions', async () => {
 
 test('/my_subs shows civ name, player id, started and deadline', async () => {
   const { deps: d, out } = deps();
-  await handleMessage(d, { chatId: 1, text: 'Game: g1 User: uA' });
+  await handleMessage(d, { chatId: 1, text: '/subscribe g1 uA' });
   out.length = 0;
   await handleMessage(d, { chatId: 1, text: '/my_subs' });
   // 30 min elapsed of a 60-min turn → started 30m ago, deadline in 30m
@@ -190,7 +191,7 @@ test('/my_subs omits timing when currentTurnStartTime is 0', async () => {
 
 test('register stores normalized username', async () => {
   const { deps: d } = deps();
-  await handleMessage(d, { chatId: 1, username: '@Alice', text: 'Game: g1 User: uA' });
+  await handleMessage(d, { chatId: 1, username: '@Alice', text: '/subscribe g1 uA' });
   const { allSubscriptions } = await import('./db');
   assert.equal(allSubscriptions(d.db)[0].username, 'alice');
 });
@@ -199,7 +200,7 @@ test('register rejected when chat is blocked', async () => {
   const { deps: d, out } = deps();
   const { blockChat } = await import('./db');
   blockChat(d.db, 1);
-  await handleMessage(d, { chatId: 1, username: 'amy', text: 'Game: g1 User: uA' });
+  await handleMessage(d, { chatId: 1, username: 'amy', text: '/subscribe g1 uA' });
   assert.match(out[0], /blocked/i);
   const { allSubscriptions } = await import('./db');
   assert.equal(allSubscriptions(d.db).length, 0);
