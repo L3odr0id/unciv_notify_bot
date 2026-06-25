@@ -1,0 +1,9 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_PATH: /data/subscriptions.db
+    volumes:
+      - "${DATA_DIR:-./data}:/data"
+    restart: unless-stopped
