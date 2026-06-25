@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { openDb, listSubscriptions, getSetting, adminChatIds } from './db';
+import { openDb, listSubscriptions, getSetting, adminChatIds, isBlocked, blockChat, allSubscriptions, blockUsername, unblockChat, unblockUsername } from './db';
 import { GamePreview } from './unciv';
 import { GameNotFound } from './unciv';
 import {
@@ -9,6 +9,7 @@ import {
   parseRegister,
   handleMessage,
   HandlerDeps,
+  formatDuration,
 } from './handlers';
 import { setLevel } from './log';
 setLevel('silent');
@@ -28,18 +29,29 @@ test('parseRegister extracts game and user', () => {
   assert.equal(parseRegister('hello'), null);
 });
 
+test('formatDuration short forms', () => {
+  assert.equal(formatDuration(0), '0m');
+  assert.equal(formatDuration(5 * 60000), '5m');
+  assert.equal(formatDuration(2 * 3600000), '2h');
+  assert.equal(formatDuration(3 * 86400000 + 4 * 3600000), '3d 4h');
+});
+
 function deps(over: Partial<HandlerDeps> = {}): { deps: HandlerDeps; out: string[] } {
   const out: string[] = [];
   const preview: GamePreview = {
     turns: 1,
     currentPlayer: 'civ1',
-    civilizations: [{ civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human' }],
+    currentTurnStartTime: 1000,
+    civilizations: [
+      { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 60 },
+    ],
   };
   return {
     out,
     deps: {
       db: openDb(':memory:'),
       adminSet: new Set(),
+      now: () => 1000 + 30 * 60000, // 30 min into the turn
       fetchPreview: async () => preview,
       reply: async (t) => {
         out.push(t);
@@ -120,4 +132,137 @@ test('/stats for admin returns counts', async () => {
   const { deps: d, out } = deps({ adminSet: new Set(['alice']) });
   await handleMessage(d, { chatId: 555, username: 'alice', text: '/stats' });
   assert.match(out[0], /games/i);
+});
+
+test('/my_subs with no subscriptions', async () => {
+  const { deps: d, out } = deps();
+  await handleMessage(d, { chatId: 1, text: '/my_subs' });
+  assert.match(out[0], /no subscriptions/i);
+});
+
+test('/my_subs shows civ name, player id, started and deadline', async () => {
+  const { deps: d, out } = deps();
+  await handleMessage(d, { chatId: 1, text: 'Game: g1 User: uA' });
+  out.length = 0;
+  await handleMessage(d, { chatId: 1, text: '/my_subs' });
+  // 30 min elapsed of a 60-min turn → started 30m ago, deadline in 30m
+  assert.match(out[0], /Game g1 — Rome's turn \(player uA\)\. Started 30m ago, deadline in 30m\./);
+});
+
+test('/my_subs reports finished game on 404', async () => {
+  const fetchPreview = async () => {
+    throw new GameNotFound('g1');
+  };
+  const { deps: d, out } = deps({ fetchPreview });
+  // subscribe directly via db so the failing fetch is only exercised by /my_subs
+  const { addSubscription } = await import('./db');
+  addSubscription(d.db, 1, 'g1', 'uA', '');
+  await handleMessage(d, { chatId: 1, text: '/my_subs' });
+  assert.match(out[0], /Game g1 — finished or deleted\./);
+});
+
+test('/my_subs reports unreachable server on other error', async () => {
+  const fetchPreview = async () => {
+    throw new Error('boom');
+  };
+  const { deps: d, out } = deps({ fetchPreview });
+  const { addSubscription } = await import('./db');
+  addSubscription(d.db, 1, 'g1', 'uA', '');
+  await handleMessage(d, { chatId: 1, text: '/my_subs' });
+  assert.match(out[0], /Game g1 — server unreachable, try later\./);
+});
+
+test('/my_subs omits timing when currentTurnStartTime is 0', async () => {
+  const preview: GamePreview = {
+    turns: 1,
+    currentPlayer: 'civ1',
+    currentTurnStartTime: 0,
+    civilizations: [
+      { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 60 },
+    ],
+  };
+  const { deps: d, out } = deps({ fetchPreview: async () => preview });
+  const { addSubscription } = await import('./db');
+  addSubscription(d.db, 1, 'g1', 'uA', '');
+  await handleMessage(d, { chatId: 1, text: '/my_subs' });
+  assert.match(out[0], /Game g1 — Rome's turn \(player uA\)\.$/m);
+});
+
+test('register stores normalized username', async () => {
+  const { deps: d } = deps();
+  await handleMessage(d, { chatId: 1, username: '@Alice', text: 'Game: g1 User: uA' });
+  const { allSubscriptions } = await import('./db');
+  assert.equal(allSubscriptions(d.db)[0].username, 'alice');
+});
+
+test('register rejected when chat is blocked', async () => {
+  const { deps: d, out } = deps();
+  const { blockChat } = await import('./db');
+  blockChat(d.db, 1);
+  await handleMessage(d, { chatId: 1, username: 'amy', text: 'Game: g1 User: uA' });
+  assert.match(out[0], /blocked/i);
+  const { allSubscriptions } = await import('./db');
+  assert.equal(allSubscriptions(d.db).length, 0);
+});
+
+test('/subs is admin only', async () => {
+  const { deps: d, out } = deps();
+  await handleMessage(d, { chatId: 1, username: 'amy', text: '/subs' });
+  assert.match(out[0], /admin only/i);
+});
+
+test('/subs lists all subscriptions for admin', async () => {
+  const { deps: d, out } = deps({ adminSet: new Set(['boss']) });
+  const { addSubscription } = await import('./db');
+  addSubscription(d.db, 5, 'g1', 'uA', 'bob');
+  await handleMessage(d, { chatId: 5, username: 'boss', text: '/subs' });
+  assert.match(out[0], /5 \| @bob \| g1 \| uA/);
+});
+
+test('/block requires admin', async () => {
+  const { deps: d, out } = deps();
+  await handleMessage(d, { chatId: 1, username: 'amy', text: '/block @spammer' });
+  assert.match(out[0], /admin only/i);
+});
+
+test('/block by handle blocks and removes their subs', async () => {
+  const { deps: d, out } = deps({ adminSet: new Set(['boss']) });
+  const { addSubscription, isBlocked, allSubscriptions } = await import('./db');
+  addSubscription(d.db, 9, 'g1', 'uA', 'spammer');
+  await handleMessage(d, { chatId: 100, username: 'boss', text: '/block @Spammer' });
+  assert.equal(isBlocked(d.db, 9, 'spammer'), true);
+  assert.equal(allSubscriptions(d.db).length, 0);
+  assert.match(out[0], /blocked .*spammer.*removed 1/i);
+});
+
+test('/block by chat id blocks and removes their subs', async () => {
+  const { deps: d, out } = deps({ adminSet: new Set(['boss']) });
+  const { addSubscription, isBlocked } = await import('./db');
+  addSubscription(d.db, 42, 'g1', 'uA', 'bob');
+  await handleMessage(d, { chatId: 100, username: 'boss', text: '/block 42' });
+  assert.equal(isBlocked(d.db, 42, ''), true);
+  assert.match(out[0], /removed 1/i);
+});
+
+test('/block with no arg shows usage', async () => {
+  const { deps: d, out } = deps({ adminSet: new Set(['boss']) });
+  await handleMessage(d, { chatId: 100, username: 'boss', text: '/block' });
+  assert.match(out[0], /usage: \/block/i);
+});
+
+test('/unblock by handle and chat id', async () => {
+  const { deps: d, out } = deps({ adminSet: new Set(['boss']) });
+  const { blockUsername, blockChat, isBlocked } = await import('./db');
+  blockUsername(d.db, 'spammer');
+  blockChat(d.db, 42);
+  await handleMessage(d, { chatId: 100, username: 'boss', text: '/unblock @Spammer' });
+  await handleMessage(d, { chatId: 100, username: 'boss', text: '/unblock 42' });
+  assert.equal(isBlocked(d.db, 42, 'spammer'), false);
+  assert.match(out[0], /unblocked/i);
+});
+
+test('/unblock something not blocked reports not in blocklist', async () => {
+  const { deps: d, out } = deps({ adminSet: new Set(['boss']) });
+  await handleMessage(d, { chatId: 100, username: 'boss', text: '/unblock @ghost' });
+  assert.match(out[0], /not in blocklist/i);
 });

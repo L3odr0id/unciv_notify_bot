@@ -7,11 +7,13 @@ export interface CivPreview {
   civName: string;
   playerId: string;
   playerType: string;
+  playerMinutesBeforeForceResign: number;
 }
 
 export interface GamePreview {
   turns: number;
   currentPlayer: string;
+  currentTurnStartTime: number;
   civilizations: CivPreview[];
 }
 
@@ -38,10 +40,19 @@ export function decodePreview(body: string): GamePreview {
   ) {
     throw new DecodeError('preview missing required fields');
   }
+  const num = (v: unknown, fallback: number): number =>
+    typeof v === 'number' && Number.isFinite(v) ? v : fallback;
   return {
     turns: obj.turns,
     currentPlayer: obj.currentPlayer,
-    civilizations: obj.civilizations,
+    currentTurnStartTime: num(obj.currentTurnStartTime, 0),
+    civilizations: (obj.civilizations as any[]).map((c) => ({
+      civID: c.civID,
+      civName: c.civName,
+      playerId: c.playerId,
+      playerType: c.playerType,
+      playerMinutesBeforeForceResign: num(c.playerMinutesBeforeForceResign, 4320),
+    })),
   };
 }
 
@@ -58,4 +69,17 @@ export async function fetchPreview(
   if (res.status === 404) throw new GameNotFound(gameId);
   if (!res.ok) throw new Error(`server responded ${res.status}`);
   return decodePreview(await res.text());
+}
+
+export function currentTurn(
+  p: GamePreview,
+): { civName: string; playerId: string; startedMs: number; deadlineMs: number } | null {
+  const civ = p.civilizations.find((c) => c.civID === p.currentPlayer);
+  if (!civ) return null;
+  return {
+    civName: civ.civName,
+    playerId: civ.playerId,
+    startedMs: p.currentTurnStartTime,
+    deadlineMs: p.currentTurnStartTime + civ.playerMinutesBeforeForceResign * 60000,
+  };
 }

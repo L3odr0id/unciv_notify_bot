@@ -18,6 +18,14 @@ import {
   getSetting,
   setSetting,
   stats,
+  allSubscriptions,
+  blockUsername,
+  blockChat,
+  unblockUsername,
+  unblockChat,
+  isBlocked,
+  removeByChat,
+  removeByUsername,
 } from './db';
 
 test('subscriptions add/list/dedup', () => {
@@ -121,4 +129,64 @@ test('openDb still works with :memory:', () => {
   const db = openDb(':memory:');
   assert.ok(db);
   db.close();
+});
+
+test('addSubscription stores username and refreshes it on conflict', () => {
+  const db = openDb(':memory:');
+  addSubscription(db, 1, 'g1', 'uA', 'alice');
+  addSubscription(db, 1, 'g1', 'uA', 'alice2'); // same PK → username updates
+  const rows = allSubscriptions(db);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].username, 'alice2');
+});
+
+test('addSubscription defaults username to empty string', () => {
+  const db = openDb(':memory:');
+  addSubscription(db, 1, 'g1', 'uA');
+  assert.equal(allSubscriptions(db)[0].username, '');
+});
+
+test('allSubscriptions returns all rows ordered by chat,game', () => {
+  const db = openDb(':memory:');
+  addSubscription(db, 2, 'gB', 'uX', 'bob');
+  addSubscription(db, 1, 'gA', 'uY', 'amy');
+  const rows = allSubscriptions(db);
+  assert.deepEqual(
+    rows.map((r) => [r.chat_id, r.game_id]),
+    [[1, 'gA'], [2, 'gB']],
+  );
+});
+
+test('blockUsername + isBlocked by username', () => {
+  const db = openDb(':memory:');
+  assert.equal(isBlocked(db, 99, 'spammer'), false);
+  blockUsername(db, 'spammer');
+  assert.equal(isBlocked(db, 99, 'spammer'), true);
+  assert.equal(isBlocked(db, 99, 'someone'), false);
+});
+
+test('blockChat + isBlocked by chat id', () => {
+  const db = openDb(':memory:');
+  blockChat(db, 42);
+  assert.equal(isBlocked(db, 42, ''), true);
+  assert.equal(isBlocked(db, 7, ''), false);
+});
+
+test('unblock returns changes count', () => {
+  const db = openDb(':memory:');
+  blockUsername(db, 'spammer');
+  assert.equal(unblockUsername(db, 'spammer'), 1);
+  assert.equal(unblockUsername(db, 'spammer'), 0);
+  blockChat(db, 42);
+  assert.equal(unblockChat(db, 42), 1);
+});
+
+test('removeByChat / removeByUsername delete subs and return count', () => {
+  const db = openDb(':memory:');
+  addSubscription(db, 1, 'g1', 'uA', 'bob');
+  addSubscription(db, 1, 'g2', 'uB', 'bob');
+  addSubscription(db, 2, 'g1', 'uC', 'amy');
+  assert.equal(removeByChat(db, 1), 2);
+  assert.equal(removeByUsername(db, 'amy'), 1);
+  assert.equal(allSubscriptions(db).length, 0);
 });

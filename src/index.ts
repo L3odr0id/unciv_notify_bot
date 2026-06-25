@@ -35,7 +35,7 @@ export function main(): void {
   bot.on('message', (msg: Message) => {
     if (!msg.text) return;
     handleMessage(
-      { db, adminSet, fetchPreview, reply: (t) => send(msg.chat.id, t) },
+      { db, adminSet, now: () => Date.now(), fetchPreview, reply: (t) => send(msg.chat.id, t) },
       { chatId: msg.chat.id, username: msg.from?.username, text: msg.text },
     ).catch((e: Error) => alerter.fatal(`handler error: ${e.message}`));
   });

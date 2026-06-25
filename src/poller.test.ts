@@ -10,9 +10,10 @@ setLevel('silent');
 const preview = (currentPlayer: string, turns = 1): GamePreview => ({
   turns,
   currentPlayer,
+  currentTurnStartTime: 0,
   civilizations: [
-    { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human' },
-    { civID: 'civ2', civName: 'Greece', playerId: 'uB', playerType: 'Human' },
+    { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 4320 },
+    { civID: 'civ2', civName: 'Greece', playerId: 'uB', playerType: 'Human', playerMinutesBeforeForceResign: 4320 },
   ],
 });
 

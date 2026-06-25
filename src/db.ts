@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   chat_id INTEGER NOT NULL,
   game_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
+  username TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (chat_id, game_id, user_id)
 );
 CREATE TABLE IF NOT EXISTS game_state (
@@ -24,6 +25,8 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT
 );
+CREATE TABLE IF NOT EXISTS blocked_usernames (username TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS blocked_chats (chat_id INTEGER PRIMARY KEY);
 `;
 
 export function openDb(path: string): DB {
@@ -34,10 +37,18 @@ export function openDb(path: string): DB {
   return db;
 }
 
-export function addSubscription(db: DB, chatId: number, gameId: string, userId: string): void {
+export function addSubscription(
+  db: DB,
+  chatId: number,
+  gameId: string,
+  userId: string,
+  username = '',
+): void {
   db.prepare(
-    'INSERT OR IGNORE INTO subscriptions (chat_id, game_id, user_id) VALUES (?, ?, ?)',
-  ).run(chatId, gameId, userId);
+    `INSERT INTO subscriptions (chat_id, game_id, user_id, username)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(chat_id, game_id, user_id) DO UPDATE SET username = excluded.username`,
+  ).run(chatId, gameId, userId, username);
 }
 
 export function removeSubscription(
@@ -63,6 +74,16 @@ export function listSubscriptions(
   return db
     .prepare('SELECT game_id, user_id FROM subscriptions WHERE chat_id = ? ORDER BY game_id')
     .all(chatId) as { game_id: string; user_id: string }[];
+}
+
+export function allSubscriptions(
+  db: DB,
+): { chat_id: number; username: string; game_id: string; user_id: string }[] {
+  return db
+    .prepare(
+      'SELECT chat_id, username, game_id, user_id FROM subscriptions ORDER BY chat_id, game_id',
+    )
+    .all() as { chat_id: number; username: string; game_id: string; user_id: string }[];
 }
 
 export function distinctGameIds(db: DB): string[] {
@@ -138,4 +159,38 @@ export function stats(db: DB): { games: number; subs: number; admins: number } {
   const subs = (db.prepare('SELECT COUNT(*) AS n FROM subscriptions').get() as { n: number }).n;
   const admins = (db.prepare('SELECT COUNT(*) AS n FROM admins').get() as { n: number }).n;
   return { games, subs, admins };
+}
+
+export function blockUsername(db: DB, username: string): void {
+  db.prepare('INSERT OR IGNORE INTO blocked_usernames (username) VALUES (?)').run(username);
+}
+
+export function blockChat(db: DB, chatId: number): void {
+  db.prepare('INSERT OR IGNORE INTO blocked_chats (chat_id) VALUES (?)').run(chatId);
+}
+
+export function unblockUsername(db: DB, username: string): number {
+  return db.prepare('DELETE FROM blocked_usernames WHERE username = ?').run(username).changes;
+}
+
+export function unblockChat(db: DB, chatId: number): number {
+  return db.prepare('DELETE FROM blocked_chats WHERE chat_id = ?').run(chatId).changes;
+}
+
+export function isBlocked(db: DB, chatId: number, username: string): boolean {
+  const byChat = db.prepare('SELECT 1 FROM blocked_chats WHERE chat_id = ?').get(chatId);
+  if (byChat) return true;
+  if (username) {
+    const byName = db.prepare('SELECT 1 FROM blocked_usernames WHERE username = ?').get(username);
+    if (byName) return true;
+  }
+  return false;
+}
+
+export function removeByChat(db: DB, chatId: number): number {
+  return db.prepare('DELETE FROM subscriptions WHERE chat_id = ?').run(chatId).changes;
+}
+
+export function removeByUsername(db: DB, username: string): number {
+  return db.prepare('DELETE FROM subscriptions WHERE username = ?').run(username).changes;
 }
