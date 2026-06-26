@@ -140,7 +140,7 @@ test('/list shows civ name, player id, started and deadline', async () => {
   out.length = 0;
   await handleMessage(d, { chatId: 1, text: '/list' });
   // 30 min elapsed of a 60-min turn → started 30m ago, deadline in 30m
-  assert.match(out[0], /Game g1 — Rome's turn \(player uA\)\. Started 30m ago, deadline in 30m\./);
+  assert.match(out[0], /Game g1\nRome's turn - started 30m ago, deadline in 30m\.\nYou: Rome/);
 });
 
 test('/list reports finished game on 404', async () => {
@@ -152,7 +152,7 @@ test('/list reports finished game on 404', async () => {
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
-  assert.match(out[0], /Game g1 — finished or deleted\./);
+  assert.match(out[0], /Game g1\nFinished or deleted\./);
 });
 
 test('/list reports unreachable server on other error', async () => {
@@ -163,7 +163,7 @@ test('/list reports unreachable server on other error', async () => {
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
-  assert.match(out[0], /Game g1 — server unreachable, try later\./);
+  assert.match(out[0], /Game g1\nServer unreachable, try later\./);
 });
 
 test('/list omits timing when currentTurnStartTime is 0', async () => {
@@ -179,7 +179,25 @@ test('/list omits timing when currentTurnStartTime is 0', async () => {
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
-  assert.match(out[0], /Game g1 — Rome's turn \(player uA\)\.$/m);
+  assert.match(out[0], /Game g1\nRome's turn\.\nYou: Rome$/m);
+});
+
+test("/list shows whose turn and your civ when it's another civ's turn", async () => {
+  const preview: GamePreview = {
+    turns: 1,
+    currentPlayer: 'civ1',
+    currentTurnStartTime: 0,
+    civilizations: [
+      { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 60 },
+      { civID: 'civ2', civName: 'Greece', playerId: 'uB', playerType: 'Human', playerMinutesBeforeForceResign: 60 },
+    ],
+  };
+  const { deps: d, out } = deps({ fetchPreview: async () => preview });
+  const { addSubscription } = await import('./db');
+  addSubscription(d.db, 1, 'g1', 'uB', '');
+  await handleMessage(d, { chatId: 1, text: '/list' });
+  // Rome's turn, but the subscriber plays Greece
+  assert.match(out[0], /Game g1\nRome's turn\.\nYou: Greece$/m);
 });
 
 test('/list shows started but omits deadline when force-resign disabled', async () => {
@@ -195,7 +213,7 @@ test('/list shows started but omits deadline when force-resign disabled', async 
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
-  assert.match(out[0], /Game g1 — Greece's turn \(player uA\)\. Started 30m ago\.$/m);
+  assert.match(out[0], /Game g1\nGreece's turn - started 30m ago\.\nYou: Greece$/m);
 });
 
 test('register stores normalized username', async () => {

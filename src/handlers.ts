@@ -15,7 +15,7 @@ import {
   removeByUsername,
   removeByChat,
 } from './db';
-import { GamePreview, GameNotFound, currentTurn } from './unciv';
+import { GamePreview, GameNotFound, currentTurn, civForPlayer } from './unciv';
 import { log } from './log';
 
 export function normalizeUsername(u: string): string {
@@ -91,32 +91,38 @@ export async function handleMessage(deps: HandlerDeps, msg: IncomingMsg): Promis
   if (text === '/list') {
     const subs = listSubscriptions(deps.db, msg.chatId);
     if (subs.length === 0) return deps.reply('No subscriptions.');
+    // De-dupe network fetches: one preview per distinct game, shared across subs.
     const games = [...new Set(subs.map((s) => s.game_id))];
-    const lines = await Promise.all(
+    const previews = new Map<string, GamePreview | GameNotFound | Error>();
+    await Promise.all(
       games.map(async (gameId) => {
         try {
-          const preview = await deps.fetchPreview(gameId);
-          const ct = currentTurn(preview);
-          if (!ct) return `Game ${gameId} — turn unknown.`;
-          let line = `Game ${gameId} — ${ct.civName}'s turn (player ${ct.playerId}).`;
-          if (ct.startedMs > 0) {
-            const now = deps.now();
-            line += ` Started ${formatDuration(now - ct.startedMs)} ago`;
-            if (ct.deadlineMs !== null) {
-              const remaining = ct.deadlineMs - now;
-              const deadline = remaining <= 0 ? 'overdue' : `in ${formatDuration(remaining)}`;
-              line += `, deadline ${deadline}`;
-            }
-            line += '.';
-          }
-          return line;
+          previews.set(gameId, await deps.fetchPreview(gameId));
         } catch (e) {
-          if (e instanceof GameNotFound) return `Game ${gameId} — finished or deleted.`;
-          return `Game ${gameId} — server unreachable, try later.`;
+          previews.set(gameId, e instanceof Error ? e : new Error(String(e)));
         }
       }),
     );
-    return deps.reply(`Your subscriptions:\n\n${lines.join('\n')}`);
+    const lines = subs.map((s) => {
+      const p = previews.get(s.game_id);
+      if (p instanceof GameNotFound) return `Game ${s.game_id}\nFinished or deleted.`;
+      if (p instanceof Error || !p) return `Game ${s.game_id}\nServer unreachable, try later.`;
+      const ct = currentTurn(p);
+      let turn = ct ? `${ct.civName}'s turn` : 'Turn unknown';
+      if (ct && ct.startedMs > 0) {
+        const now = deps.now();
+        turn += ` - started ${formatDuration(now - ct.startedMs)} ago`;
+        if (ct.deadlineMs !== null) {
+          const remaining = ct.deadlineMs - now;
+          turn += `, deadline ${remaining <= 0 ? 'overdue' : `in ${formatDuration(remaining)}`}`;
+        }
+      }
+      turn += '.';
+      const civName = civForPlayer(p, s.user_id);
+      const you = civName ? civName : `player ${s.user_id} (not in game)`;
+      return `Game ${s.game_id}\n${turn}\nYou: ${you}`;
+    });
+    return deps.reply(`Your subscriptions:\n\n${lines.join('\n\n')}`);
   }
 
   if (text.startsWith('/unsubscribe')) {

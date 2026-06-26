@@ -72,6 +72,11 @@ export async function fetchPreview(
   return decodePreview(await res.text());
 }
 
+export function civForPlayer(p: GamePreview, userId: string): string | null {
+  const civ = p.civilizations.find((c) => c.playerId === userId);
+  return civ ? civ.civName : null;
+}
+
 export function currentTurn(
   p: GamePreview,
 ): { civName: string; playerId: string; startedMs: number; deadlineMs: number | null } | null {
