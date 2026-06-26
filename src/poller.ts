@@ -6,7 +6,7 @@ import {
   setGameState,
   deleteGame,
 } from './db';
-import { GamePreview, GameNotFound, isUsersTurn } from './unciv';
+import { GamePreview, GameNotFound, isUsersTurn, currentTurn } from './unciv';
 import { Alerter } from './alerts';
 import { log } from './log';
 
@@ -54,10 +54,11 @@ export async function pollGame(deps: PollDeps, gameId: string): Promise<void> {
     return;
   }
 
+  const civName = currentTurn(preview)?.civName ?? 'Unknown';
   for (const s of subscribersForGame(deps.db, gameId)) {
     if (isUsersTurn(preview, s.user_id)) {
       try {
-        await deps.send(s.chat_id, `It is ${s.user_id} turn in game ${gameId}`);
+        await deps.send(s.chat_id, `It is ${civName}'s (${s.user_id}) turn in game ${gameId}`);
         log.info(`notified ${s.user_id} for game ${gameId} (turn ${preview.turns})`);
       } catch (err) {
         await deps.alerter.telegramFailure(err);

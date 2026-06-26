@@ -91,7 +91,24 @@ test('decodePreview applies defaults when new fields absent', () => {
   });
   const p = decodePreview(body);
   assert.equal(p.currentTurnStartTime, 0);
-  assert.equal(p.civilizations[0].playerMinutesBeforeForceResign, 4320);
+  assert.equal(p.civilizations[0].playerMinutesBeforeForceResign, 0);
+});
+
+test('currentTurn returns null deadline when force-resign disabled (pmbfr 0)', () => {
+  const p = {
+    turns: 5,
+    currentPlayer: 'civ1',
+    currentTurnStartTime: 1000,
+    civilizations: [
+      { civID: 'civ1', civName: 'Greece', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 0 },
+    ],
+  };
+  assert.deepEqual(currentTurn(p), {
+    civName: 'Greece',
+    playerId: 'uA',
+    startedMs: 1000,
+    deadlineMs: null,
+  });
 });
 
 test('currentTurn resolves civ name, player id, started and deadline', () => {

@@ -34,7 +34,7 @@ test('notifies only the subscriber whose turn it is', async () => {
   await pollGame(deps, 'g1');
   assert.equal(sent.length, 1);
   assert.equal(sent[0].chatId, 10);
-  assert.match(sent[0].text, /It is uA turn in game g1/);
+  assert.match(sent[0].text, /It is Rome's \(uA\) turn in game g1/);
   assert.deepEqual(getGameState(db, 'g1'), { last_turns: 1, last_current_player: 'civ1' });
 });
 

@@ -108,9 +108,13 @@ export async function handleMessage(deps: HandlerDeps, msg: IncomingMsg): Promis
           let line = `Game ${gameId} — ${ct.civName}'s turn (player ${ct.playerId}).`;
           if (ct.startedMs > 0) {
             const now = deps.now();
-            const remaining = ct.deadlineMs - now;
-            const deadline = remaining <= 0 ? 'overdue' : `in ${formatDuration(remaining)}`;
-            line += ` Started ${formatDuration(now - ct.startedMs)} ago, deadline ${deadline}.`;
+            line += ` Started ${formatDuration(now - ct.startedMs)} ago`;
+            if (ct.deadlineMs !== null) {
+              const remaining = ct.deadlineMs - now;
+              const deadline = remaining <= 0 ? 'overdue' : `in ${formatDuration(remaining)}`;
+              line += `, deadline ${deadline}`;
+            }
+            line += '.';
           }
           return line;
         } catch (e) {

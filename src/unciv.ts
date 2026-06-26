@@ -51,7 +51,8 @@ export function decodePreview(body: string): GamePreview {
       civName: c.civName,
       playerId: c.playerId,
       playerType: c.playerType,
-      playerMinutesBeforeForceResign: num(c.playerMinutesBeforeForceResign, 4320),
+      // 0 means force-resign disabled; a missing field is treated the same.
+      playerMinutesBeforeForceResign: num(c.playerMinutesBeforeForceResign, 0),
     })),
   };
 }
@@ -73,13 +74,15 @@ export async function fetchPreview(
 
 export function currentTurn(
   p: GamePreview,
-): { civName: string; playerId: string; startedMs: number; deadlineMs: number } | null {
+): { civName: string; playerId: string; startedMs: number; deadlineMs: number | null } | null {
   const civ = p.civilizations.find((c) => c.civID === p.currentPlayer);
   if (!civ) return null;
+  const forceResignMin = civ.playerMinutesBeforeForceResign;
   return {
     civName: civ.civName,
     playerId: civ.playerId,
     startedMs: p.currentTurnStartTime,
-    deadlineMs: p.currentTurnStartTime + civ.playerMinutesBeforeForceResign * 60000,
+    // 0 (or missing) means force-resign is disabled — there is no deadline.
+    deadlineMs: forceResignMin > 0 ? p.currentTurnStartTime + forceResignMin * 60000 : null,
   };
 }

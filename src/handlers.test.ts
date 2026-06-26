@@ -189,6 +189,22 @@ test('/my_subs omits timing when currentTurnStartTime is 0', async () => {
   assert.match(out[0], /Game g1 — Rome's turn \(player uA\)\.$/m);
 });
 
+test('/my_subs shows started but omits deadline when force-resign disabled', async () => {
+  const preview: GamePreview = {
+    turns: 1,
+    currentPlayer: 'civ1',
+    currentTurnStartTime: 1000,
+    civilizations: [
+      { civID: 'civ1', civName: 'Greece', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 0 },
+    ],
+  };
+  const { deps: d, out } = deps({ fetchPreview: async () => preview });
+  const { addSubscription } = await import('./db');
+  addSubscription(d.db, 1, 'g1', 'uA', '');
+  await handleMessage(d, { chatId: 1, text: '/my_subs' });
+  assert.match(out[0], /Game g1 — Greece's turn \(player uA\)\. Started 30m ago\.$/m);
+});
+
 test('register stores normalized username', async () => {
   const { deps: d } = deps();
   await handleMessage(d, { chatId: 1, username: '@Alice', text: '/subscribe g1 uA' });
