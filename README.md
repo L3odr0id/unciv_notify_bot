@@ -14,8 +14,7 @@ sends you a Telegram message.
 | `/subscribe <game_id> <user_id>` | Register a subscription. Validates that `user_id` (your Unciv multiplayer User ID / UUID) is a player in the game via the live preview. The only way to subscribe. |
 | `/start` | Welcome message and basic instructions. |
 | `/help` | All available commands and formats. |
-| `/list` | Lists registered games for this chat. |
-| `/my_subs` | Subscriptions with live turn status: current civ name, player id, how long ago the turn started, and the force-resign deadline (omitted when force-resign is disabled). |
+| `/list` | Subscriptions with live turn status: current civ name, player id, how long ago the turn started, and the force-resign deadline (omitted when force-resign is disabled). |
 | `/unsubscribe <game_id> [user_id]` | Remove a subscription. Without `user_id`, removes all subscriptions for that game in this chat; with it, removes only that `(game, user)` pair. |
 
 ## Admin commands

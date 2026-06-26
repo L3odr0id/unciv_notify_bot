@@ -54,8 +54,7 @@ export const USAGE = [
   '',
   'Commands:',
   '  /subscribe <game_id> <user_id> — get notified on your turn',
-  '  /list — your subscriptions',
-  '  /my_subs — your subscriptions with live turn status',
+  '  /list — your subscriptions with live turn status',
   '  /unsubscribe <game_id> [user_id] — stop notifications',
 ].join('\n');
 
@@ -90,12 +89,6 @@ export async function handleMessage(deps: HandlerDeps, msg: IncomingMsg): Promis
   }
 
   if (text === '/list') {
-    const subs = listSubscriptions(deps.db, msg.chatId);
-    if (subs.length === 0) return deps.reply('No subscriptions.');
-    return deps.reply(subs.map((s) => `• ${s.game_id} — ${s.user_id}`).join('\n'));
-  }
-
-  if (text === '/my_subs') {
     const subs = listSubscriptions(deps.db, msg.chatId);
     if (subs.length === 0) return deps.reply('No subscriptions.');
     const games = [...new Set(subs.map((s) => s.game_id))];

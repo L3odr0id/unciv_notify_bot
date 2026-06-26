@@ -92,13 +92,6 @@ test('unknown text returns usage', async () => {
   assert.match(out[0], /\/subscribe/);
 });
 
-test('/list shows subscriptions', async () => {
-  const { deps: d, out } = deps();
-  await handleMessage(d, { chatId: 1, text: '/subscribe g1 uA' });
-  await handleMessage(d, { chatId: 1, text: '/list' });
-  assert.match(out[1], /g1/);
-});
-
 test('/unsubscribe removes', async () => {
   const { deps: d, out } = deps();
   await handleMessage(d, { chatId: 1, text: '/subscribe g1 uA' });
@@ -109,7 +102,7 @@ test('/unsubscribe removes', async () => {
 
 test('admin message learns chat_id', async () => {
   const { deps: d } = deps({ adminSet: new Set(['alice']) });
-  await handleMessage(d, { chatId: 555, username: '@Alice', text: '/list' });
+  await handleMessage(d, { chatId: 555, username: '@Alice', text: '/help' });
   assert.deepEqual(adminChatIds(d.db), [555]);
 });
 
@@ -135,45 +128,45 @@ test('/stats for admin returns counts', async () => {
   assert.match(out[0], /games/i);
 });
 
-test('/my_subs with no subscriptions', async () => {
+test('/list with no subscriptions', async () => {
   const { deps: d, out } = deps();
-  await handleMessage(d, { chatId: 1, text: '/my_subs' });
+  await handleMessage(d, { chatId: 1, text: '/list' });
   assert.match(out[0], /no subscriptions/i);
 });
 
-test('/my_subs shows civ name, player id, started and deadline', async () => {
+test('/list shows civ name, player id, started and deadline', async () => {
   const { deps: d, out } = deps();
   await handleMessage(d, { chatId: 1, text: '/subscribe g1 uA' });
   out.length = 0;
-  await handleMessage(d, { chatId: 1, text: '/my_subs' });
+  await handleMessage(d, { chatId: 1, text: '/list' });
   // 30 min elapsed of a 60-min turn → started 30m ago, deadline in 30m
   assert.match(out[0], /Game g1 — Rome's turn \(player uA\)\. Started 30m ago, deadline in 30m\./);
 });
 
-test('/my_subs reports finished game on 404', async () => {
+test('/list reports finished game on 404', async () => {
   const fetchPreview = async () => {
     throw new GameNotFound('g1');
   };
   const { deps: d, out } = deps({ fetchPreview });
-  // subscribe directly via db so the failing fetch is only exercised by /my_subs
+  // subscribe directly via db so the failing fetch is only exercised by /list
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
-  await handleMessage(d, { chatId: 1, text: '/my_subs' });
+  await handleMessage(d, { chatId: 1, text: '/list' });
   assert.match(out[0], /Game g1 — finished or deleted\./);
 });
 
-test('/my_subs reports unreachable server on other error', async () => {
+test('/list reports unreachable server on other error', async () => {
   const fetchPreview = async () => {
     throw new Error('boom');
   };
   const { deps: d, out } = deps({ fetchPreview });
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
-  await handleMessage(d, { chatId: 1, text: '/my_subs' });
+  await handleMessage(d, { chatId: 1, text: '/list' });
   assert.match(out[0], /Game g1 — server unreachable, try later\./);
 });
 
-test('/my_subs omits timing when currentTurnStartTime is 0', async () => {
+test('/list omits timing when currentTurnStartTime is 0', async () => {
   const preview: GamePreview = {
     turns: 1,
     currentPlayer: 'civ1',
@@ -185,11 +178,11 @@ test('/my_subs omits timing when currentTurnStartTime is 0', async () => {
   const { deps: d, out } = deps({ fetchPreview: async () => preview });
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
-  await handleMessage(d, { chatId: 1, text: '/my_subs' });
+  await handleMessage(d, { chatId: 1, text: '/list' });
   assert.match(out[0], /Game g1 — Rome's turn \(player uA\)\.$/m);
 });
 
-test('/my_subs shows started but omits deadline when force-resign disabled', async () => {
+test('/list shows started but omits deadline when force-resign disabled', async () => {
   const preview: GamePreview = {
     turns: 1,
     currentPlayer: 'civ1',
@@ -201,7 +194,7 @@ test('/my_subs shows started but omits deadline when force-resign disabled', asy
   const { deps: d, out } = deps({ fetchPreview: async () => preview });
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
-  await handleMessage(d, { chatId: 1, text: '/my_subs' });
+  await handleMessage(d, { chatId: 1, text: '/list' });
   assert.match(out[0], /Game g1 — Greece's turn \(player uA\)\. Started 30m ago\.$/m);
 });
 
