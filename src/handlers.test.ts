@@ -138,7 +138,7 @@ void test('/list shows civ name, player id, started and deadline', async () => {
   out.length = 0;
   await handleMessage(d, { chatId: 1, text: '/list' });
   // 30 min elapsed of a 60-min turn → started 30m ago, deadline in 30m
-  assert.match(out[0], /Game g1\nRome's turn - started 30m ago, deadline in 30m\.\nYou: Rome/);
+  assert.match(out[0], /Game g1\nTurn 1\nRome's turn - started 30m ago, deadline in 30m\.\nYou: Rome/);
 });
 
 void test('/list reports finished game on 404', async () => {
@@ -173,7 +173,7 @@ void test('/list omits timing when currentTurnStartTime is 0', async () => {
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
-  assert.match(out[0], /Game g1\nRome's turn\.\nYou: Rome$/m);
+  assert.match(out[0], /Game g1\nTurn 1\nRome's turn\.\nYou: Rome$/m);
 });
 
 void test("/list shows whose turn and your civ when it's another civ's turn", async () => {
@@ -191,7 +191,7 @@ void test("/list shows whose turn and your civ when it's another civ's turn", as
   addSubscription(d.db, 1, 'g1', 'uB', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
   // Rome's turn, but the subscriber plays Greece
-  assert.match(out[0], /Game g1\nRome's turn\.\nYou: Greece$/m);
+  assert.match(out[0], /Game g1\nTurn 1\nRome's turn\.\nYou: Greece$/m);
 });
 
 void test('/list shows started but omits deadline when force-resign disabled', async () => {
@@ -207,7 +207,7 @@ void test('/list shows started but omits deadline when force-resign disabled', a
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
-  assert.match(out[0], /Game g1\nGreece's turn - started 30m ago\.\nYou: Greece$/m);
+  assert.match(out[0], /Game g1\nTurn 1\nGreece's turn - started 30m ago\.\nYou: Greece$/m);
 });
 
 void test('register stores normalized username', async () => {
