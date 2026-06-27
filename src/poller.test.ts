@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { openDb, addSubscription, getGameState, distinctGameIds } from './db';
+import { openDb, addSubscription, getGameState, distinctGameIds, DB } from './db';
 import { GamePreview, GameNotFound } from './unciv';
 import { Alerter } from './alerts';
 import { pollGame, pollOnce, startPoller, PollDeps } from './poller';
@@ -19,16 +19,17 @@ const preview = (currentPlayer: string, turns = 1): GamePreview => ({
 
 function setup(fetchPreview: PollDeps['fetchPreview']) {
   const sent: { chatId: number; text: string }[] = [];
-  const send = async (chatId: number, text: string) => {
+  const send = (chatId: number, text: string) => {
     sent.push({ chatId, text });
+    return Promise.resolve();
   };
   const db = openDb(':memory:');
   const alerter = new Alerter({ send, adminChatIds: () => [], failThreshold: 2 });
   return { db, sent, deps: { db, fetchPreview, send, alerter } as PollDeps };
 }
 
-test('notifies only the subscriber whose turn it is', async () => {
-  const { db, sent, deps } = setup(async () => preview('civ1'));
+void test('notifies only the subscriber whose turn it is', async () => {
+  const { db, sent, deps } = setup(() => Promise.resolve(preview('civ1')));
   addSubscription(db, 10, 'g1', 'uA');
   addSubscription(db, 20, 'g1', 'uB');
   await pollGame(deps, 'g1');
@@ -38,8 +39,40 @@ test('notifies only the subscriber whose turn it is', async () => {
   assert.deepEqual(getGameState(db, 'g1'), { last_turns: 1, last_current_player: 'civ1' });
 });
 
-test('no notification when state unchanged', async () => {
-  const { db, sent, deps } = setup(async () => preview('civ1'));
+void test('notification includes deadline when force-resign enabled and start known', async () => {
+  const withDeadline: GamePreview = {
+    turns: 1,
+    currentPlayer: 'civ1',
+    currentTurnStartTime: 1000,
+    civilizations: [
+      { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 90 },
+    ],
+  };
+  const { db, sent, deps } = setup(() => Promise.resolve(withDeadline));
+  // 30 min elapsed of a 90-min turn → 1h left (formatDuration drops sub-hour minutes)
+  deps.now = () => 1000 + 30 * 60000;
+  addSubscription(db, 10, 'g1', 'uA');
+  await pollGame(deps, 'g1');
+  assert.equal(sent[0].text, "🔔 It is Rome's (uA) turn in game g1 — 1h left to move.");
+});
+
+void test('notification omits deadline when force-resign disabled', async () => {
+  const noDeadline: GamePreview = {
+    turns: 1,
+    currentPlayer: 'civ1',
+    currentTurnStartTime: 1000,
+    civilizations: [
+      { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 0 },
+    ],
+  };
+  const { db, sent, deps } = setup(() => Promise.resolve(noDeadline));
+  addSubscription(db, 10, 'g1', 'uA');
+  await pollGame(deps, 'g1');
+  assert.equal(sent[0].text, "🔔 It is Rome's (uA) turn in game g1.");
+});
+
+void test('no notification when state unchanged', async () => {
+  const { db, sent, deps } = setup(() => Promise.resolve(preview('civ1')));
   addSubscription(db, 10, 'g1', 'uA');
   await pollGame(deps, 'g1'); // first time notifies + stores
   assert.equal(sent.length, 1);
@@ -47,10 +80,8 @@ test('no notification when state unchanged', async () => {
   assert.equal(sent.length, 1);
 });
 
-test('404 notifies all subscribers and deletes the game', async () => {
-  const { db, sent, deps } = setup(async () => {
-    throw new GameNotFound('g1');
-  });
+void test('404 notifies all subscribers and deletes the game', async () => {
+  const { db, sent, deps } = setup(() => Promise.reject(new GameNotFound('g1')));
   addSubscription(db, 10, 'g1', 'uA');
   addSubscription(db, 20, 'g1', 'uB');
   await pollGame(deps, 'g1');
@@ -59,12 +90,13 @@ test('404 notifies all subscribers and deletes the game', async () => {
   assert.equal(distinctGameIds(db).length, 0);
 });
 
-test('repeated failures reach the alerter threshold', async () => {
+void test('repeated failures reach the alerter threshold', async () => {
   const alerts: string[] = [];
   const db = openDb(':memory:');
   const alerter = new Alerter({
-    send: async (_c, t) => {
+    send: (_c, t) => {
       alerts.push(t);
+      return Promise.resolve();
     },
     adminChatIds: () => [1],
     failThreshold: 2,
@@ -72,10 +104,8 @@ test('repeated failures reach the alerter threshold', async () => {
   addSubscription(db, 10, 'g1', 'uA');
   const deps = {
     db,
-    fetchPreview: async () => {
-      throw new Error('network down');
-    },
-    send: async () => {},
+    fetchPreview: () => Promise.reject(new Error('network down')),
+    send: () => Promise.resolve(),
     alerter,
   } as PollDeps;
   await pollGame(deps, 'g1');
@@ -85,11 +115,11 @@ test('repeated failures reach the alerter threshold', async () => {
   assert.match(alerts[0], /g1 failing/);
 });
 
-test('pollOnce iterates all distinct games', async () => {
+void test('pollOnce iterates all distinct games', async () => {
   const seen: string[] = [];
-  const { db, deps } = setup(async (gid) => {
+  const { db, deps } = setup((gid) => {
     seen.push(gid);
-    return preview('civ1');
+    return Promise.resolve(preview('civ1'));
   });
   addSubscription(db, 1, 'g1', 'uA');
   addSubscription(db, 2, 'g2', 'uA');
@@ -97,8 +127,8 @@ test('pollOnce iterates all distinct games', async () => {
   assert.deepEqual(seen.sort(), ['g1', 'g2']);
 });
 
-test('startPoller: stop() before first tick prevents pollOnce', async () => {
-  const { db, deps } = setup(async () => preview('civ1'));
+void test('startPoller: stop() before first tick prevents pollOnce', async () => {
+  const { db, deps } = setup(() => Promise.resolve(preview('civ1')));
   addSubscription(db, 10, 'g1', 'uA');
 
   const { stop } = startPoller(deps, () => 10000);
@@ -114,13 +144,13 @@ test('startPoller: stop() before first tick prevents pollOnce', async () => {
   assert.equal(getGameState(db, 'g1'), null);
 });
 
-test('startPoller: tick fires pollOnce and getIntervalMs is read per tick', async () => {
+void test('startPoller: tick fires pollOnce and getIntervalMs is read per tick', async () => {
   let intervalCallCount = 0;
   let fetchPreviewCallCount = 0;
 
-  const { db, deps } = setup(async () => {
+  const { db, deps } = setup(() => {
     fetchPreviewCallCount++;
-    return preview('civ1');
+    return Promise.resolve(preview('civ1'));
   });
   addSubscription(db, 10, 'g1', 'uA');
 
@@ -143,17 +173,18 @@ test('startPoller: tick fires pollOnce and getIntervalMs is read per tick', asyn
   assert.ok(intervalCallCount >= 2, `getIntervalMs should be called >= 2 times, got ${intervalCallCount}`);
 });
 
-test('startPoller: pollOnce error routes to alerter.fatal', async () => {
+void test('startPoller: pollOnce error routes to alerter.fatal', async () => {
   const fatals: string[] = [];
   const db = openDb(':memory:');
   const alerter = new Alerter({
-    send: async () => {},
+    send: () => Promise.resolve(),
     adminChatIds: () => [],
     failThreshold: 2,
   });
   // Override fatal to capture the message
-  alerter.fatal = async (msg: string) => {
+  alerter.fatal = (msg: string) => {
     fatals.push(msg);
+    return Promise.resolve();
   };
 
   addSubscription(db, 10, 'g1', 'uA');
@@ -165,9 +196,9 @@ test('startPoller: pollOnce error routes to alerter.fatal', async () => {
       distinctGameIds: () => {
         throw new Error('db error');
       },
-    } as any,
-    fetchPreview: async () => preview('civ1'),
-    send: async () => {},
+    } as unknown as DB,
+    fetchPreview: () => Promise.resolve(preview('civ1')),
+    send: () => Promise.resolve(),
     alerter,
   } as PollDeps;
 

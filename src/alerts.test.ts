@@ -8,13 +8,14 @@ function collector() {
   const sent: { chatId: number; text: string }[] = [];
   return {
     sent,
-    send: async (chatId: number, text: string) => {
+    send: (chatId: number, text: string) => {
       sent.push({ chatId, text });
+      return Promise.resolve();
     },
   };
 }
 
-test('recordFailure alerts once at threshold, not before', async () => {
+void test('recordFailure alerts once at threshold, not before', async () => {
   const c = collector();
   const a = new Alerter({ send: c.send, adminChatIds: () => [1, 2], failThreshold: 3 });
   await a.recordFailure('g1', 'boom');
@@ -26,7 +27,7 @@ test('recordFailure alerts once at threshold, not before', async () => {
   assert.equal(c.sent.length, 2);
 });
 
-test('recordSuccess resets so a later failure can alert again', async () => {
+void test('recordSuccess resets so a later failure can alert again', async () => {
   const c = collector();
   const a = new Alerter({ send: c.send, adminChatIds: () => [1], failThreshold: 1 });
   await a.recordFailure('g1', 'boom');
@@ -36,7 +37,7 @@ test('recordSuccess resets so a later failure can alert again', async () => {
   assert.equal(c.sent.length, 2);
 });
 
-test('telegramFailure is throttled by time window', async () => {
+void test('telegramFailure is throttled by time window', async () => {
   const c = collector();
   let t = 0;
   const a = new Alerter({ send: c.send, adminChatIds: () => [1], now: () => t, tgThrottleMs: 1000 });
@@ -48,7 +49,7 @@ test('telegramFailure is throttled by time window', async () => {
   assert.equal(c.sent.length, 2);
 });
 
-test('fatal alerts all admins immediately', async () => {
+void test('fatal alerts all admins immediately', async () => {
   const c = collector();
   const a = new Alerter({ send: c.send, adminChatIds: () => [1, 2] });
   await a.fatal('died');

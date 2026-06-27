@@ -27,33 +27,40 @@ export function decodePreview(body: string): GamePreview {
   } catch (e) {
     throw new DecodeError(`gunzip/base64 failed: ${(e as Error).message}`);
   }
-  let obj: any;
+  let obj: unknown;
   try {
     obj = JSON.parse(json);
   } catch {
     throw new DecodeError('json parse failed');
   }
+  const rec = (v: unknown): Record<string, unknown> =>
+    typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : {};
+  const root = rec(obj);
   if (
-    typeof obj?.turns !== 'number' ||
-    typeof obj?.currentPlayer !== 'string' ||
-    !Array.isArray(obj?.civilizations)
+    typeof root.turns !== 'number' ||
+    typeof root.currentPlayer !== 'string' ||
+    !Array.isArray(root.civilizations)
   ) {
     throw new DecodeError('preview missing required fields');
   }
   const num = (v: unknown, fallback: number): number =>
     typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+  const str = (v: unknown): string => (typeof v === 'string' ? v : '');
   return {
-    turns: obj.turns,
-    currentPlayer: obj.currentPlayer,
-    currentTurnStartTime: num(obj.currentTurnStartTime, 0),
-    civilizations: (obj.civilizations as any[]).map((c) => ({
-      civID: c.civID,
-      civName: c.civName,
-      playerId: c.playerId,
-      playerType: c.playerType,
-      // 0 means force-resign disabled; a missing field is treated the same.
-      playerMinutesBeforeForceResign: num(c.playerMinutesBeforeForceResign, 0),
-    })),
+    turns: root.turns,
+    currentPlayer: root.currentPlayer,
+    currentTurnStartTime: num(root.currentTurnStartTime, 0),
+    civilizations: root.civilizations.map((raw) => {
+      const c = rec(raw);
+      return {
+        civID: str(c.civID),
+        civName: str(c.civName),
+        playerId: str(c.playerId),
+        playerType: str(c.playerType),
+        // 0 means force-resign disabled; a missing field is treated the same.
+        playerMinutesBeforeForceResign: num(c.playerMinutesBeforeForceResign, 0),
+      };
+    }),
   };
 }
 
@@ -90,4 +97,14 @@ export function currentTurn(
     // 0 (or missing) means force-resign is disabled — there is no deadline.
     deadlineMs: forceResignMin > 0 ? p.currentTurnStartTime + forceResignMin * 60000 : null,
   };
+}
+
+export function formatDuration(ms: number): string {
+  const totalMin = Math.floor(ms / 60000);
+  const days = Math.floor(totalMin / 1440);
+  const hours = Math.floor((totalMin % 1440) / 60);
+  const minutes = totalMin % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h`;
+  return `${minutes}m`;
 }

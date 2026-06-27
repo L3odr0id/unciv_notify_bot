@@ -28,7 +28,7 @@ import {
   removeByUsername,
 } from './db';
 
-test('subscriptions add/list/dedup', () => {
+void test('subscriptions add/list/dedup', () => {
   const db = openDb(':memory:');
   addSubscription(db, 1, 'g1', 'uA');
   addSubscription(db, 1, 'g1', 'uA'); // duplicate ignored
@@ -37,7 +37,7 @@ test('subscriptions add/list/dedup', () => {
   assert.deepEqual(distinctGameIds(db).sort(), ['g1', 'g2']);
 });
 
-test('subscribersForGame returns chat+user', () => {
+void test('subscribersForGame returns chat+user', () => {
   const db = openDb(':memory:');
   addSubscription(db, 1, 'g1', 'uA');
   addSubscription(db, 2, 'g1', 'uB');
@@ -45,7 +45,7 @@ test('subscribersForGame returns chat+user', () => {
   assert.equal(subs.length, 2);
 });
 
-test('removeSubscription by game removes all users for that game/chat', () => {
+void test('removeSubscription by game removes all users for that game/chat', () => {
   const db = openDb(':memory:');
   addSubscription(db, 1, 'g1', 'uA');
   addSubscription(db, 1, 'g1', 'uB');
@@ -54,7 +54,7 @@ test('removeSubscription by game removes all users for that game/chat', () => {
   assert.equal(listSubscriptions(db, 1).length, 0);
 });
 
-test('removeSubscription with userId removes one', () => {
+void test('removeSubscription with userId removes one', () => {
   const db = openDb(':memory:');
   addSubscription(db, 1, 'g1', 'uA');
   addSubscription(db, 1, 'g1', 'uB');
@@ -62,7 +62,7 @@ test('removeSubscription with userId removes one', () => {
   assert.equal(listSubscriptions(db, 1).length, 1);
 });
 
-test('game_state get/set/delete', () => {
+void test('game_state get/set/delete', () => {
   const db = openDb(':memory:');
   assert.equal(getGameState(db, 'g1'), undefined);
   setGameState(db, 'g1', 5, 'civ1');
@@ -71,7 +71,7 @@ test('game_state get/set/delete', () => {
   assert.deepEqual(getGameState(db, 'g1'), { last_turns: 6, last_current_player: 'civ2' });
 });
 
-test('deleteGame removes subs and state', () => {
+void test('deleteGame removes subs and state', () => {
   const db = openDb(':memory:');
   addSubscription(db, 1, 'g1', 'uA');
   setGameState(db, 'g1', 5, 'civ1');
@@ -80,7 +80,7 @@ test('deleteGame removes subs and state', () => {
   assert.equal(getGameState(db, 'g1'), undefined);
 });
 
-test('removeSubscription with empty-string userId removes only that row', () => {
+void test('removeSubscription with empty-string userId removes only that row', () => {
   const db = openDb(':memory:');
   addSubscription(db, 1, 'g1', '');
   addSubscription(db, 1, 'g1', 'uB');
@@ -88,7 +88,7 @@ test('removeSubscription with empty-string userId removes only that row', () => 
   assert.equal(listSubscriptions(db, 1).length, 1);
 });
 
-test('admins upsert learns and updates chat_id', () => {
+void test('admins upsert learns and updates chat_id', () => {
   const db = openDb(':memory:');
   upsertAdmin(db, 'alice', 100);
   upsertAdmin(db, 'alice', 101); // re-contact, new chat
@@ -96,14 +96,14 @@ test('admins upsert learns and updates chat_id', () => {
   assert.deepEqual(adminChatIds(db).sort((a, b) => a - b), [101, 200]);
 });
 
-test('settings get/set', () => {
+void test('settings get/set', () => {
   const db = openDb(':memory:');
   assert.equal(getSetting(db, 'poll_interval_seconds'), undefined);
   setSetting(db, 'poll_interval_seconds', '30');
   assert.equal(getSetting(db, 'poll_interval_seconds'), '30');
 });
 
-test('stats counts distinct games, subs, admins', () => {
+void test('stats counts distinct games, subs, admins', () => {
   const db = openDb(':memory:');
   addSubscription(db, 1, 'g1', 'uA');
   addSubscription(db, 2, 'g1', 'uB');
@@ -112,7 +112,7 @@ test('stats counts distinct games, subs, admins', () => {
   assert.deepEqual(stats(db), { games: 2, subs: 3, admins: 1 });
 });
 
-test('openDb creates a missing nested parent directory and the db file', () => {
+void test('openDb creates a missing nested parent directory and the db file', () => {
   const root = join(tmpdir(), `uncivbot-test-${process.pid}-${Date.now()}`);
   const dbPath = join(root, 'nested', 'subscriptions.db');
   let db;
@@ -125,13 +125,13 @@ test('openDb creates a missing nested parent directory and the db file', () => {
   }
 });
 
-test('openDb still works with :memory:', () => {
+void test('openDb still works with :memory:', () => {
   const db = openDb(':memory:');
   assert.ok(db);
   db.close();
 });
 
-test('addSubscription stores username and refreshes it on conflict', () => {
+void test('addSubscription stores username and refreshes it on conflict', () => {
   const db = openDb(':memory:');
   addSubscription(db, 1, 'g1', 'uA', 'alice');
   addSubscription(db, 1, 'g1', 'uA', 'alice2'); // same PK → username updates
@@ -140,13 +140,13 @@ test('addSubscription stores username and refreshes it on conflict', () => {
   assert.equal(rows[0].username, 'alice2');
 });
 
-test('addSubscription defaults username to empty string', () => {
+void test('addSubscription defaults username to empty string', () => {
   const db = openDb(':memory:');
   addSubscription(db, 1, 'g1', 'uA');
   assert.equal(allSubscriptions(db)[0].username, '');
 });
 
-test('allSubscriptions returns all rows ordered by chat,game', () => {
+void test('allSubscriptions returns all rows ordered by chat,game', () => {
   const db = openDb(':memory:');
   addSubscription(db, 2, 'gB', 'uX', 'bob');
   addSubscription(db, 1, 'gA', 'uY', 'amy');
@@ -157,7 +157,7 @@ test('allSubscriptions returns all rows ordered by chat,game', () => {
   );
 });
 
-test('blockUsername + isBlocked by username', () => {
+void test('blockUsername + isBlocked by username', () => {
   const db = openDb(':memory:');
   assert.equal(isBlocked(db, 99, 'spammer'), false);
   blockUsername(db, 'spammer');
@@ -165,14 +165,14 @@ test('blockUsername + isBlocked by username', () => {
   assert.equal(isBlocked(db, 99, 'someone'), false);
 });
 
-test('blockChat + isBlocked by chat id', () => {
+void test('blockChat + isBlocked by chat id', () => {
   const db = openDb(':memory:');
   blockChat(db, 42);
   assert.equal(isBlocked(db, 42, ''), true);
   assert.equal(isBlocked(db, 7, ''), false);
 });
 
-test('unblock returns changes count', () => {
+void test('unblock returns changes count', () => {
   const db = openDb(':memory:');
   blockUsername(db, 'spammer');
   assert.equal(unblockUsername(db, 'spammer'), 1);
@@ -181,7 +181,7 @@ test('unblock returns changes count', () => {
   assert.equal(unblockChat(db, 42), 1);
 });
 
-test('removeByChat / removeByUsername delete subs and return count', () => {
+void test('removeByChat / removeByUsername delete subs and return count', () => {
   const db = openDb(':memory:');
   addSubscription(db, 1, 'g1', 'uA', 'bob');
   addSubscription(db, 1, 'g2', 'uB', 'bob');

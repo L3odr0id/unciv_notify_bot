@@ -6,7 +6,7 @@ import {
   setGameState,
   deleteGame,
 } from './db';
-import { GamePreview, GameNotFound, isUsersTurn, currentTurn } from './unciv';
+import { GamePreview, GameNotFound, isUsersTurn, currentTurn, formatDuration } from './unciv';
 import { Alerter } from './alerts';
 import { log } from './log';
 
@@ -17,6 +17,7 @@ export interface PollDeps {
   fetchPreview: (gameId: string) => Promise<GamePreview>;
   send: (chatId: number, text: string) => Promise<void>;
   alerter: Alerter;
+  now?: () => number;
 }
 
 export async function pollGame(deps: PollDeps, gameId: string): Promise<void> {
@@ -54,11 +55,18 @@ export async function pollGame(deps: PollDeps, gameId: string): Promise<void> {
     return;
   }
 
-  const civName = currentTurn(preview)?.civName ?? 'Unknown';
+  const ct = currentTurn(preview);
+  const civName = ct?.civName ?? 'Unknown';
+  // Only show a deadline when the turn start is known and force-resign is enabled.
+  let deadlinePart = '';
+  if (ct && ct.startedMs > 0 && ct.deadlineMs !== null) {
+    const remaining = ct.deadlineMs - (deps.now ?? Date.now)();
+    if (remaining > 0) deadlinePart = ` — ${formatDuration(remaining)} left to move`;
+  }
   for (const s of subscribersForGame(deps.db, gameId)) {
     if (isUsersTurn(preview, s.user_id)) {
       try {
-        await deps.send(s.chat_id, `It is ${civName}'s (${s.user_id}) turn in game ${gameId}`);
+        await deps.send(s.chat_id, `🔔 It is ${civName}'s (${s.user_id}) turn in game ${gameId}${deadlinePart}.`);
         log.info(`notified ${s.user_id} for game ${gameId} (turn ${preview.turns})`);
       } catch (err) {
         await deps.alerter.telegramFailure(err);
@@ -85,10 +93,11 @@ export function startPoller(deps: PollDeps, getIntervalMs: () => number): { stop
     } catch (e) {
       await deps.alerter.fatal(`poll loop error: ${(e as Error).message}`);
     }
-    if (!stopped) timer = setTimeout(tick, getIntervalMs());
+    // tick() handles its own errors, so fire-and-forget is safe here.
+    if (!stopped) timer = setTimeout(() => void tick(), getIntervalMs());
   };
 
-  timer = setTimeout(tick, getIntervalMs());
+  timer = setTimeout(() => void tick(), getIntervalMs());
 
   return {
     stop: () => {

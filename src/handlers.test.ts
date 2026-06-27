@@ -1,29 +1,28 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { openDb, listSubscriptions, getSetting, adminChatIds, isBlocked, blockChat, allSubscriptions, blockUsername, unblockChat, unblockUsername } from './db';
+import { openDb, listSubscriptions, getSetting, adminChatIds } from './db';
 import { GamePreview } from './unciv';
-import { GameNotFound } from './unciv';
+import { GameNotFound, formatDuration } from './unciv';
 import {
   normalizeUsername,
   parseAdminSet,
   handleMessage,
   HandlerDeps,
-  formatDuration,
 } from './handlers';
 import { setLevel } from './log';
 setLevel('silent');
 
-test('normalizeUsername strips @ and lowercases', () => {
+void test('normalizeUsername strips @ and lowercases', () => {
   assert.equal(normalizeUsername('@Alice'), 'alice');
   assert.equal(normalizeUsername(' BOB '), 'bob');
 });
 
-test('parseAdminSet splits and normalizes', () => {
+void test('parseAdminSet splits and normalizes', () => {
   const s = parseAdminSet('@Alice, bob ,');
   assert.deepEqual([...s].sort(), ['alice', 'bob']);
 });
 
-test('formatDuration short forms', () => {
+void test('formatDuration short forms', () => {
   assert.equal(formatDuration(0), '0m');
   assert.equal(formatDuration(5 * 60000), '5m');
   assert.equal(formatDuration(2 * 3600000), '2h');
@@ -46,53 +45,52 @@ function deps(over: Partial<HandlerDeps> = {}): { deps: HandlerDeps; out: string
       db: openDb(':memory:'),
       adminSet: new Set(),
       now: () => 1000 + 30 * 60000, // 30 min into the turn
-      fetchPreview: async () => preview,
-      reply: async (t) => {
+      fetchPreview: () => Promise.resolve(preview),
+      reply: (t) => {
         out.push(t);
+        return Promise.resolve();
       },
       ...over,
     },
   };
 }
 
-test('/subscribe adds subscription and confirms', async () => {
+void test('/subscribe adds subscription and confirms', async () => {
   const { deps: d, out } = deps();
   await handleMessage(d, { chatId: 1, text: '/subscribe g1 uA' });
   assert.equal(listSubscriptions(d.db, 1).length, 1);
   assert.match(out[0], /subscribed/i);
 });
 
-test('/subscribe without args shows usage', async () => {
+void test('/subscribe without args shows usage', async () => {
   const { deps: d, out } = deps();
   await handleMessage(d, { chatId: 1, text: '/subscribe g1' });
   assert.equal(listSubscriptions(d.db, 1).length, 0);
   assert.match(out[0], /usage: \/subscribe/i);
 });
 
-test('/subscribe rejects user not in game', async () => {
+void test('/subscribe rejects user not in game', async () => {
   const { deps: d, out } = deps();
   await handleMessage(d, { chatId: 1, text: '/subscribe g1 nobody' });
   assert.equal(listSubscriptions(d.db, 1).length, 0);
   assert.match(out[0], /not a player/i);
 });
 
-test('register reports game not found', async () => {
+void test('register reports game not found', async () => {
   const { deps: d, out } = deps({
-    fetchPreview: async () => {
-      throw new GameNotFound('g1');
-    },
+    fetchPreview: () => Promise.reject(new GameNotFound('g1')),
   });
   await handleMessage(d, { chatId: 1, text: '/subscribe g1 uA' });
   assert.match(out[0], /not found/i);
 });
 
-test('unknown text returns usage', async () => {
+void test('unknown text returns usage', async () => {
   const { deps: d, out } = deps();
   await handleMessage(d, { chatId: 1, text: 'blah' });
   assert.match(out[0], /\/subscribe/);
 });
 
-test('/unsubscribe removes', async () => {
+void test('/unsubscribe removes', async () => {
   const { deps: d, out } = deps();
   await handleMessage(d, { chatId: 1, text: '/subscribe g1 uA' });
   await handleMessage(d, { chatId: 1, text: '/unsubscribe g1' });
@@ -100,13 +98,13 @@ test('/unsubscribe removes', async () => {
   assert.match(out[1], /removed/i);
 });
 
-test('admin message learns chat_id', async () => {
+void test('admin message learns chat_id', async () => {
   const { deps: d } = deps({ adminSet: new Set(['alice']) });
   await handleMessage(d, { chatId: 555, username: '@Alice', text: '/help' });
   assert.deepEqual(adminChatIds(d.db), [555]);
 });
 
-test('/setinterval persists for admin and is rejected for non-admin', async () => {
+void test('/setinterval persists for admin and is rejected for non-admin', async () => {
   const { deps: d, out } = deps({ adminSet: new Set(['alice']) });
   await handleMessage(d, { chatId: 9, username: 'eve', text: '/setinterval 20' });
   assert.equal(getSetting(d.db, 'poll_interval_seconds'), undefined);
@@ -115,26 +113,26 @@ test('/setinterval persists for admin and is rejected for non-admin', async () =
   assert.equal(getSetting(d.db, 'poll_interval_seconds'), '20');
 });
 
-test('/setinterval rejects below minimum', async () => {
+void test('/setinterval rejects below minimum', async () => {
   const { deps: d, out } = deps({ adminSet: new Set(['alice']) });
   await handleMessage(d, { chatId: 555, username: 'alice', text: '/setinterval 5' });
   assert.equal(getSetting(d.db, 'poll_interval_seconds'), undefined);
   assert.match(out[0], /at least 10/i);
 });
 
-test('/stats for admin returns counts', async () => {
+void test('/stats for admin returns counts', async () => {
   const { deps: d, out } = deps({ adminSet: new Set(['alice']) });
   await handleMessage(d, { chatId: 555, username: 'alice', text: '/stats' });
   assert.match(out[0], /games/i);
 });
 
-test('/list with no subscriptions', async () => {
+void test('/list with no subscriptions', async () => {
   const { deps: d, out } = deps();
   await handleMessage(d, { chatId: 1, text: '/list' });
   assert.match(out[0], /no subscriptions/i);
 });
 
-test('/list shows civ name, player id, started and deadline', async () => {
+void test('/list shows civ name, player id, started and deadline', async () => {
   const { deps: d, out } = deps();
   await handleMessage(d, { chatId: 1, text: '/subscribe g1 uA' });
   out.length = 0;
@@ -143,10 +141,8 @@ test('/list shows civ name, player id, started and deadline', async () => {
   assert.match(out[0], /Game g1\nRome's turn - started 30m ago, deadline in 30m\.\nYou: Rome/);
 });
 
-test('/list reports finished game on 404', async () => {
-  const fetchPreview = async () => {
-    throw new GameNotFound('g1');
-  };
+void test('/list reports finished game on 404', async () => {
+  const fetchPreview = () => Promise.reject(new GameNotFound('g1'));
   const { deps: d, out } = deps({ fetchPreview });
   // subscribe directly via db so the failing fetch is only exercised by /list
   const { addSubscription } = await import('./db');
@@ -155,10 +151,8 @@ test('/list reports finished game on 404', async () => {
   assert.match(out[0], /Game g1\nFinished or deleted\./);
 });
 
-test('/list reports unreachable server on other error', async () => {
-  const fetchPreview = async () => {
-    throw new Error('boom');
-  };
+void test('/list reports unreachable server on other error', async () => {
+  const fetchPreview = () => Promise.reject(new Error('boom'));
   const { deps: d, out } = deps({ fetchPreview });
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
@@ -166,7 +160,7 @@ test('/list reports unreachable server on other error', async () => {
   assert.match(out[0], /Game g1\nServer unreachable, try later\./);
 });
 
-test('/list omits timing when currentTurnStartTime is 0', async () => {
+void test('/list omits timing when currentTurnStartTime is 0', async () => {
   const preview: GamePreview = {
     turns: 1,
     currentPlayer: 'civ1',
@@ -175,14 +169,14 @@ test('/list omits timing when currentTurnStartTime is 0', async () => {
       { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 60 },
     ],
   };
-  const { deps: d, out } = deps({ fetchPreview: async () => preview });
+  const { deps: d, out } = deps({ fetchPreview: () => Promise.resolve(preview) });
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
   assert.match(out[0], /Game g1\nRome's turn\.\nYou: Rome$/m);
 });
 
-test("/list shows whose turn and your civ when it's another civ's turn", async () => {
+void test("/list shows whose turn and your civ when it's another civ's turn", async () => {
   const preview: GamePreview = {
     turns: 1,
     currentPlayer: 'civ1',
@@ -192,7 +186,7 @@ test("/list shows whose turn and your civ when it's another civ's turn", async (
       { civID: 'civ2', civName: 'Greece', playerId: 'uB', playerType: 'Human', playerMinutesBeforeForceResign: 60 },
     ],
   };
-  const { deps: d, out } = deps({ fetchPreview: async () => preview });
+  const { deps: d, out } = deps({ fetchPreview: () => Promise.resolve(preview) });
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uB', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
@@ -200,7 +194,7 @@ test("/list shows whose turn and your civ when it's another civ's turn", async (
   assert.match(out[0], /Game g1\nRome's turn\.\nYou: Greece$/m);
 });
 
-test('/list shows started but omits deadline when force-resign disabled', async () => {
+void test('/list shows started but omits deadline when force-resign disabled', async () => {
   const preview: GamePreview = {
     turns: 1,
     currentPlayer: 'civ1',
@@ -209,21 +203,21 @@ test('/list shows started but omits deadline when force-resign disabled', async 
       { civID: 'civ1', civName: 'Greece', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 0 },
     ],
   };
-  const { deps: d, out } = deps({ fetchPreview: async () => preview });
+  const { deps: d, out } = deps({ fetchPreview: () => Promise.resolve(preview) });
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
   assert.match(out[0], /Game g1\nGreece's turn - started 30m ago\.\nYou: Greece$/m);
 });
 
-test('register stores normalized username', async () => {
+void test('register stores normalized username', async () => {
   const { deps: d } = deps();
   await handleMessage(d, { chatId: 1, username: '@Alice', text: '/subscribe g1 uA' });
   const { allSubscriptions } = await import('./db');
   assert.equal(allSubscriptions(d.db)[0].username, 'alice');
 });
 
-test('register rejected when chat is blocked', async () => {
+void test('register rejected when chat is blocked', async () => {
   const { deps: d, out } = deps();
   const { blockChat } = await import('./db');
   blockChat(d.db, 1);
@@ -233,13 +227,13 @@ test('register rejected when chat is blocked', async () => {
   assert.equal(allSubscriptions(d.db).length, 0);
 });
 
-test('/subs is admin only', async () => {
+void test('/subs is admin only', async () => {
   const { deps: d, out } = deps();
   await handleMessage(d, { chatId: 1, username: 'amy', text: '/subs' });
   assert.match(out[0], /admin only/i);
 });
 
-test('/subs lists all subscriptions for admin', async () => {
+void test('/subs lists all subscriptions for admin', async () => {
   const { deps: d, out } = deps({ adminSet: new Set(['boss']) });
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 5, 'g1', 'uA', 'bob');
@@ -247,13 +241,13 @@ test('/subs lists all subscriptions for admin', async () => {
   assert.match(out[0], /5 \| @bob \| g1 \| uA/);
 });
 
-test('/block requires admin', async () => {
+void test('/block requires admin', async () => {
   const { deps: d, out } = deps();
   await handleMessage(d, { chatId: 1, username: 'amy', text: '/block @spammer' });
   assert.match(out[0], /admin only/i);
 });
 
-test('/block by handle blocks and removes their subs', async () => {
+void test('/block by handle blocks and removes their subs', async () => {
   const { deps: d, out } = deps({ adminSet: new Set(['boss']) });
   const { addSubscription, isBlocked, allSubscriptions } = await import('./db');
   addSubscription(d.db, 9, 'g1', 'uA', 'spammer');
@@ -263,7 +257,7 @@ test('/block by handle blocks and removes their subs', async () => {
   assert.match(out[0], /blocked .*spammer.*removed 1/i);
 });
 
-test('/block by chat id blocks and removes their subs', async () => {
+void test('/block by chat id blocks and removes their subs', async () => {
   const { deps: d, out } = deps({ adminSet: new Set(['boss']) });
   const { addSubscription, isBlocked } = await import('./db');
   addSubscription(d.db, 42, 'g1', 'uA', 'bob');
@@ -272,13 +266,13 @@ test('/block by chat id blocks and removes their subs', async () => {
   assert.match(out[0], /removed 1/i);
 });
 
-test('/block with no arg shows usage', async () => {
+void test('/block with no arg shows usage', async () => {
   const { deps: d, out } = deps({ adminSet: new Set(['boss']) });
   await handleMessage(d, { chatId: 100, username: 'boss', text: '/block' });
   assert.match(out[0], /usage: \/block/i);
 });
 
-test('/unblock by handle and chat id', async () => {
+void test('/unblock by handle and chat id', async () => {
   const { deps: d, out } = deps({ adminSet: new Set(['boss']) });
   const { blockUsername, blockChat, isBlocked } = await import('./db');
   blockUsername(d.db, 'spammer');
@@ -289,7 +283,7 @@ test('/unblock by handle and chat id', async () => {
   assert.match(out[0], /unblocked/i);
 });
 
-test('/unblock something not blocked reports not in blocklist', async () => {
+void test('/unblock something not blocked reports not in blocklist', async () => {
   const { deps: d, out } = deps({ adminSet: new Set(['boss']) });
   await handleMessage(d, { chatId: 100, username: 'boss', text: '/unblock @ghost' });
   assert.match(out[0], /not in blocklist/i);

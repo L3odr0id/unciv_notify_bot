@@ -18,7 +18,7 @@ function capture(fn: () => void): { out: string; err: string } {
   return { out, err };
 }
 
-test('info level: debug suppressed, info to stdout with timestamped format', () => {
+void test('info level: debug suppressed, info to stdout with timestamped format', () => {
   setLevel('info');
   const { out } = capture(() => {
     log.debug('dbg');
@@ -28,7 +28,7 @@ test('info level: debug suppressed, info to stdout with timestamped format', () 
   assert.match(out, /^\d{4}-\d{2}-\d{2}T[\d:.]+Z INFO hello\n$/);
 });
 
-test('warn and error go to stderr, not stdout', () => {
+void test('warn and error go to stderr, not stdout', () => {
   setLevel('info');
   const { out, err } = capture(() => {
     log.warn('w');
@@ -39,7 +39,7 @@ test('warn and error go to stderr, not stdout', () => {
   assert.match(err, /ERROR e/);
 });
 
-test('silent suppresses everything', () => {
+void test('silent suppresses everything', () => {
   setLevel('silent');
   const { out, err } = capture(() => {
     log.info('x');
@@ -49,7 +49,7 @@ test('silent suppresses everything', () => {
   setLevel('info');
 });
 
-test('debug level lets debug through and appends extra args', () => {
+void test('debug level lets debug through and appends extra args', () => {
   setLevel('debug');
   const { out } = capture(() => log.debug('d', { a: 1 }));
   assert.match(out, /DEBUG d \{"a":1\}/);

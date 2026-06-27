@@ -44,7 +44,7 @@ export function main(): void {
     void alerter.telegramFailure(e);
   });
 
-  startPoller({ db, fetchPreview, send, alerter }, () => resolveIntervalMs(db, fallbackSeconds));
+  startPoller({ db, fetchPreview, send, alerter, now: () => Date.now() }, () => resolveIntervalMs(db, fallbackSeconds));
 
   log.info(
     `bot started: server=https://uncivserver.xyz intervalSeconds=${fallbackSeconds} ` +

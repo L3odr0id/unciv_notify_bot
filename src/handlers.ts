@@ -15,7 +15,7 @@ import {
   removeByUsername,
   removeByChat,
 } from './db';
-import { GamePreview, GameNotFound, currentTurn, civForPlayer } from './unciv';
+import { GamePreview, GameNotFound, currentTurn, civForPlayer, formatDuration } from './unciv';
 import { log } from './log';
 
 export function normalizeUsername(u: string): string {
@@ -35,16 +35,6 @@ export function parseAdminSet(envValue: string | undefined): Set<string> {
 function parseBlockTarget(arg: string): { kind: 'chat'; chatId: number } | { kind: 'user'; username: string } {
   if (/^-?\d+$/.test(arg)) return { kind: 'chat', chatId: Number(arg) };
   return { kind: 'user', username: normalizeUsername(arg) };
-}
-
-export function formatDuration(ms: number): string {
-  const totalMin = Math.floor(ms / 60000);
-  const days = Math.floor(totalMin / 1440);
-  const hours = Math.floor((totalMin % 1440) / 60);
-  const minutes = totalMin % 60;
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h`;
-  return `${minutes}m`;
 }
 
 export const MIN_INTERVAL_SECONDS = 10;
