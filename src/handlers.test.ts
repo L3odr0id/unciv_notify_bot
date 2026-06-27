@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { openDb, listSubscriptions, getSetting, adminChatIds } from './db';
+import { openDb, listSubscriptions, getSetting, setSetting, adminChatIds } from './db';
 import { GamePreview } from './unciv';
 import { GameNotFound, formatDuration } from './unciv';
 import {
@@ -44,6 +44,7 @@ function deps(over: Partial<HandlerDeps> = {}): { deps: HandlerDeps; out: string
     deps: {
       db: openDb(':memory:'),
       adminSet: new Set(),
+      fallbackIntervalSeconds: 60,
       now: () => 1000 + 30 * 60000, // 30 min into the turn
       fetchPreview: () => Promise.resolve(preview),
       reply: (t) => {
@@ -111,6 +112,15 @@ void test('/setinterval persists for admin and is rejected for non-admin', async
   assert.match(out[0], /admin/i);
   await handleMessage(d, { chatId: 555, username: 'alice', text: '/setinterval 20' });
   assert.equal(getSetting(d.db, 'poll_interval_seconds'), '20');
+});
+
+void test('/getinterval returns fallback when unset, then stored value', async () => {
+  const { deps: d, out } = deps({ fallbackIntervalSeconds: 45 });
+  await handleMessage(d, { chatId: 1, text: '/getinterval' });
+  assert.match(out[0], /45s/);
+  setSetting(d.db, 'poll_interval_seconds', '20');
+  await handleMessage(d, { chatId: 1, text: '/getinterval' });
+  assert.match(out[1], /20s/);
 });
 
 void test('/setinterval rejects below minimum', async () => {

@@ -2,11 +2,8 @@ import TelegramBot from 'node-telegram-bot-api';
 import type { Message } from 'node-telegram-bot-api';
 import { DB, openDb, getSetting, adminChatIds, distinctGameIds } from './db';
 import { Alerter } from './alerts';
-import {
-  handleMessage,
-  parseAdminSet,
-  MIN_INTERVAL_SECONDS,
-} from './handlers';
+import { handleMessage, parseAdminSet } from './handlers';
+import { MIN_INTERVAL_SECONDS, DEFAULT_INTERVAL_SECONDS } from './constants';
 import { fetchPreview } from './unciv';
 import { startPoller } from './poller';
 import { log } from './log';
@@ -22,7 +19,8 @@ export function main(): void {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) throw new Error('TELEGRAM_BOT_TOKEN is required');
 
-  const fallbackSeconds = Number(process.env.POLL_INTERVAL_SECONDS ?? '60') || 60;
+  const fallbackSeconds =
+    Number(process.env.POLL_INTERVAL_SECONDS ?? DEFAULT_INTERVAL_SECONDS) || DEFAULT_INTERVAL_SECONDS;
   const adminSet = parseAdminSet(process.env.ADMIN_USERNAMES);
 
   const dbPath = process.env.DATABASE_PATH ?? './subscriptions.db';
@@ -35,7 +33,14 @@ export function main(): void {
   bot.on('message', (msg: Message) => {
     if (!msg.text) return;
     handleMessage(
-      { db, adminSet, now: () => Date.now(), fetchPreview, reply: (t) => send(msg.chat.id, t) },
+      {
+        db,
+        adminSet,
+        fallbackIntervalSeconds: fallbackSeconds,
+        now: () => Date.now(),
+        fetchPreview,
+        reply: (t) => send(msg.chat.id, t),
+      },
       { chatId: msg.chat.id, username: msg.from?.username, text: msg.text },
     ).catch((e: Error) => alerter.fatal(`handler error: ${e.message}`));
   });

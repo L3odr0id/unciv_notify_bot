@@ -4,6 +4,7 @@ import {
   removeSubscription,
   listSubscriptions,
   upsertAdmin,
+  getSetting,
   setSetting,
   stats,
   isBlocked,
@@ -16,6 +17,7 @@ import {
   removeByChat,
 } from './db';
 import { GamePreview, GameNotFound, currentTurn, civForPlayer, formatDuration } from './unciv';
+import { MIN_INTERVAL_SECONDS } from './constants';
 import { log } from './log';
 
 export function normalizeUsername(u: string): string {
@@ -37,8 +39,6 @@ function parseBlockTarget(arg: string): { kind: 'chat'; chatId: number } | { kin
   return { kind: 'user', username: normalizeUsername(arg) };
 }
 
-export const MIN_INTERVAL_SECONDS = 10;
-
 export const USAGE = [
   'Unciv turn-notifier bot.',
   '',
@@ -46,6 +46,7 @@ export const USAGE = [
   '  /subscribe <game_id> <user_id> — get notified on your turn',
   '  /list — your subscriptions with live turn status',
   '  /unsubscribe <game_id> [user_id] — stop notifications',
+  '  /getinterval — current polling interval in seconds',
 ].join('\n');
 
 export interface IncomingMsg {
@@ -57,6 +58,7 @@ export interface IncomingMsg {
 export interface HandlerDeps {
   db: DB;
   adminSet: Set<string>;
+  fallbackIntervalSeconds: number;
   now: () => number;
   fetchPreview: (gameId: string) => Promise<GamePreview>;
   reply: (text: string) => Promise<void>;
@@ -121,6 +123,13 @@ export async function handleMessage(deps: HandlerDeps, msg: IncomingMsg): Promis
     const removed = removeSubscription(deps.db, msg.chatId, gameId, userId);
     if (removed > 0) log.info(`chat ${msg.chatId} unsubscribed ${gameId} (${removed})`);
     return deps.reply(removed > 0 ? `Removed ${removed} subscription(s).` : 'Nothing to remove.');
+  }
+
+  if (text === '/getinterval') {
+    const stored = getSetting(deps.db, 'poll_interval_seconds');
+    const chosen = Number.isFinite(Number(stored)) ? Number(stored) : deps.fallbackIntervalSeconds;
+    const seconds = Math.max(chosen, MIN_INTERVAL_SECONDS);
+    return deps.reply(`Polling interval: ${seconds}s.`);
   }
 
   if (text.startsWith('/setinterval')) {

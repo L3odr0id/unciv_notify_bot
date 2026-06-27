@@ -16,6 +16,7 @@ sends you a Telegram message.
 | `/help` | All available commands and formats. |
 | `/list` | Subscriptions with live turn status: current civ name, player id, how long ago the turn started, and the force-resign deadline (omitted when force-resign is disabled). |
 | `/unsubscribe <game_id> [user_id]` | Remove a subscription. Without `user_id`, removes all subscriptions for that game in this chat; with it, removes only that `(game, user)` pair. |
+| `/getinterval` | Current polling interval in seconds. |
 
 ## Admin commands
 
