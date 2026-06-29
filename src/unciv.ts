@@ -2,6 +2,15 @@ import zlib from 'node:zlib';
 
 const SERVER = 'https://uncivserver.xyz';
 
+// Unciv serializes previews with libGDX `Json` + `usePrototypes`, which omits any
+// field equal to its class default. So an absent timer param means "default", not
+// "disabled" (Unciv has no off switch — the lobby floors each at 3 minutes). These
+// mirror GameParameters.kt and Civilization(InfoPreview) in the reference source.
+export const DEFAULT_MINUTES_UNTIL_SKIP_TURN = 60 * 24; // 1440
+export const DEFAULT_MINUTES_UNTIL_FORCE_RESIGN = 3 * 24 * 60; // 4320
+export const DEFAULT_MINUTES_RECOVERED_PER_TURN = 60 * 24; // 1440
+export const DEFAULT_PLAYER_MINUTES_BEFORE_FORCE_RESIGN = 3 * 24 * 60; // 4320
+
 export interface CivPreview {
   civID: string;
   civName: string;
@@ -59,9 +68,9 @@ export function decodePreview(body: string): GamePreview {
     currentPlayer: root.currentPlayer,
     currentTurnStartTime: num(root.currentTurnStartTime, 0),
     gameParameters: {
-      minutesUntilSkipTurn: num(params.minutesUntilSkipTurn, 0),
-      minutesUntilForceResign: num(params.minutesUntilForceResign, 0),
-      minutesRecoveredPerTurn: num(params.minutesRecoveredPerTurn, 0),
+      minutesUntilSkipTurn: num(params.minutesUntilSkipTurn, DEFAULT_MINUTES_UNTIL_SKIP_TURN),
+      minutesUntilForceResign: num(params.minutesUntilForceResign, DEFAULT_MINUTES_UNTIL_FORCE_RESIGN),
+      minutesRecoveredPerTurn: num(params.minutesRecoveredPerTurn, DEFAULT_MINUTES_RECOVERED_PER_TURN),
     },
     civilizations: root.civilizations.map((raw) => {
       const c = rec(raw);
@@ -70,8 +79,12 @@ export function decodePreview(body: string): GamePreview {
         civName: str(c.civName),
         playerId: str(c.playerId),
         playerType: str(c.playerType),
-        // 0 means force-resign disabled; a missing field is treated the same.
-        playerMinutesBeforeForceResign: num(c.playerMinutesBeforeForceResign, 0),
+        // Absent means the field equals its default (libGDX omits defaults), i.e. a
+        // full 3-day bank — not 0. An explicit 0 is kept (player is out of time).
+        playerMinutesBeforeForceResign: num(
+          c.playerMinutesBeforeForceResign,
+          DEFAULT_PLAYER_MINUTES_BEFORE_FORCE_RESIGN,
+        ),
       };
     }),
   };

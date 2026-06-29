@@ -91,7 +91,9 @@ void test('decodePreview applies defaults when new fields absent', () => {
   });
   const p = decodePreview(body);
   assert.equal(p.currentTurnStartTime, 0);
-  assert.equal(p.civilizations[0].playerMinutesBeforeForceResign, 0);
+  // Unciv (libGDX Json + usePrototypes) omits fields at their class default, so
+  // an absent playerMinutesBeforeForceResign means the default 3-day bank, not 0.
+  assert.equal(p.civilizations[0].playerMinutesBeforeForceResign, 4320);
 });
 
 void test('currentTurn returns null deadlines when timers disabled', () => {
@@ -162,7 +164,9 @@ void test('decodePreview parses gameParameters', () => {
   });
 });
 
-void test('decodePreview defaults gameParameters to zeros when absent', () => {
+void test('decodePreview defaults absent gameParameters to Unciv defaults', () => {
+  // libGDX Json omits fields equal to their class default; absent timer params
+  // therefore mean "default" (non-zero), not "disabled".
   const body = makeBlob({
     turns: 1,
     currentPlayer: 'civ1',
@@ -170,10 +174,24 @@ void test('decodePreview defaults gameParameters to zeros when absent', () => {
   });
   const p = decodePreview(body);
   assert.deepEqual(p.gameParameters, {
-    minutesUntilSkipTurn: 0,
-    minutesUntilForceResign: 0,
-    minutesRecoveredPerTurn: 0,
+    minutesUntilSkipTurn: 1440,
+    minutesUntilForceResign: 4320,
+    minutesRecoveredPerTurn: 1440,
   });
+});
+
+void test('decodePreview keeps an explicit gameParameters value of 0', () => {
+  // An explicit 0 (not omittable, since 0 != default) means the feature was
+  // forced off via an edited save — preserve it so currentTurn omits the line.
+  const body = makeBlob({
+    turns: 1,
+    currentPlayer: 'civ1',
+    gameParameters: { minutesUntilForceResign: 0 },
+    civilizations: [{ civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human' }],
+  });
+  const p = decodePreview(body);
+  assert.equal(p.gameParameters.minutesUntilForceResign, 0);
+  assert.equal(p.gameParameters.minutesUntilSkipTurn, 1440);
 });
 
 void test('formatDuration drops trailing 0h for whole days', () => {
