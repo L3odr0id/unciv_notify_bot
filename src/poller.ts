@@ -6,7 +6,7 @@ import {
   setGameState,
   deleteGame,
 } from './db';
-import { GamePreview, GameNotFound, isUsersTurn, currentTurn, formatDuration } from './unciv';
+import { GamePreview, GameNotFound, isUsersTurn, currentTurn, formatTurnTimers } from './unciv';
 import { Alerter } from './alerts';
 import { log } from './log';
 
@@ -57,16 +57,13 @@ export async function pollGame(deps: PollDeps, gameId: string): Promise<void> {
 
   const ct = currentTurn(preview);
   const civName = ct?.civName ?? 'Unknown';
-  // Only show a deadline when the turn start is known and force-resign is enabled.
-  let deadlinePart = '';
-  if (ct && ct.startedMs > 0 && ct.deadlineMs !== null) {
-    const remaining = ct.deadlineMs - (deps.now ?? Date.now)();
-    if (remaining > 0) deadlinePart = ` — ${formatDuration(remaining)} left to move`;
-  }
+  const now = (deps.now ?? Date.now)();
+  const timerLines = ct && ct.startedMs > 0 ? formatTurnTimers(ct, now) : [];
+  const suffix = timerLines.length ? '\n' + timerLines.map((l) => `   ${l}`).join('\n') : '';
   for (const s of subscribersForGame(deps.db, gameId)) {
     if (isUsersTurn(preview, s.user_id)) {
       try {
-        await deps.send(s.chat_id, `🔔 It is ${civName}'s (${s.user_id}) turn in game ${gameId}${deadlinePart}.`);
+        await deps.send(s.chat_id, `🔔 It is ${civName}'s (${s.user_id}) turn in game ${gameId}.${suffix}`);
         log.info(`notified ${s.user_id} for game ${gameId} (turn ${preview.turns})`);
       } catch (err) {
         await deps.alerter.telegramFailure(err);

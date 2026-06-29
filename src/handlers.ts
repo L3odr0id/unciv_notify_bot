@@ -16,7 +16,7 @@ import {
   removeByUsername,
   removeByChat,
 } from './db';
-import { GamePreview, GameNotFound, currentTurn, civForPlayer, formatDuration } from './unciv';
+import { GamePreview, GameNotFound, currentTurn, civForPlayer, formatDuration, formatTurnTimers } from './unciv';
 import { MIN_INTERVAL_SECONDS } from './constants';
 import { log } from './log';
 
@@ -101,18 +101,17 @@ export async function handleMessage(deps: HandlerDeps, msg: IncomingMsg): Promis
       if (p instanceof Error || !p) return `Game ${s.game_id}\nServer unreachable, try later.`;
       const ct = currentTurn(p);
       let turn = ct ? `${ct.civName}'s turn` : 'Turn unknown';
+      let timerBlock = '';
       if (ct && ct.startedMs > 0) {
         const now = deps.now();
         turn += ` - started ${formatDuration(now - ct.startedMs)} ago`;
-        if (ct.deadlineMs !== null) {
-          const remaining = ct.deadlineMs - now;
-          turn += `, deadline ${remaining <= 0 ? 'overdue' : `in ${formatDuration(remaining)}`}`;
-        }
+        const lines = formatTurnTimers(ct, now);
+        if (lines.length) timerBlock = '\n' + lines.map((l) => `   ${l}`).join('\n');
       }
       turn += '.';
       const civName = civForPlayer(p, s.user_id);
       const you = civName ? civName : `player ${s.user_id} (not in game)`;
-      return `Game ${s.game_id}\nTurn ${p.turns}\n${turn}\nYou: ${you}`;
+      return `Game ${s.game_id}\nTurn ${p.turns}\n${turn}${timerBlock}\nYou: ${you}`;
     });
     return deps.reply(`Your subscriptions:\n\n${lines.join('\n\n')}`);
   }

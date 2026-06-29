@@ -11,6 +11,7 @@ const preview = (currentPlayer: string, turns = 1): GamePreview => ({
   turns,
   currentPlayer,
   currentTurnStartTime: 0,
+  gameParameters: { minutesUntilSkipTurn: 0, minutesUntilForceResign: 0, minutesRecoveredPerTurn: 0 },
   civilizations: [
     { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 4320 },
     { civID: 'civ2', civName: 'Greece', playerId: 'uB', playerType: 'Human', playerMinutesBeforeForceResign: 4320 },
@@ -39,21 +40,24 @@ void test('notifies only the subscriber whose turn it is', async () => {
   assert.deepEqual(getGameState(db, 'g1'), { last_turns: 1, last_current_player: 'civ1' });
 });
 
-void test('notification includes deadline when force-resign enabled and start known', async () => {
-  const withDeadline: GamePreview = {
+void test('notification includes skip and total timers when enabled', async () => {
+  const withTimers: GamePreview = {
     turns: 1,
     currentPlayer: 'civ1',
     currentTurnStartTime: 1000,
+    gameParameters: { minutesUntilSkipTurn: 60, minutesUntilForceResign: 4320, minutesRecoveredPerTurn: 0 },
     civilizations: [
       { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 90 },
     ],
   };
-  const { db, sent, deps } = setup(() => Promise.resolve(withDeadline));
-  // 30 min elapsed of a 90-min turn → 1h left (formatDuration drops sub-hour minutes)
-  deps.now = () => 1000 + 30 * 60000;
+  const { db, sent, deps } = setup(() => Promise.resolve(withTimers));
+  deps.now = () => 1000 + 30 * 60000; // 30 min into the turn
   addSubscription(db, 10, 'g1', 'uA');
   await pollGame(deps, 'g1');
-  assert.equal(sent[0].text, "🔔 It is Rome's (uA) turn in game g1 — 1h left to move.");
+  assert.equal(
+    sent[0].text,
+    "🔔 It is Rome's (uA) turn in game g1.\n   ⏭ Skip in: 30m\n   ⏳ Total left: 1h",
+  );
 });
 
 void test('notification omits deadline when force-resign disabled', async () => {
@@ -61,6 +65,7 @@ void test('notification omits deadline when force-resign disabled', async () => 
     turns: 1,
     currentPlayer: 'civ1',
     currentTurnStartTime: 1000,
+    gameParameters: { minutesUntilSkipTurn: 0, minutesUntilForceResign: 0, minutesRecoveredPerTurn: 0 },
     civilizations: [
       { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 0 },
     ],

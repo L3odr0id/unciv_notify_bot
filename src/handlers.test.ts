@@ -35,6 +35,7 @@ function deps(over: Partial<HandlerDeps> = {}): { deps: HandlerDeps; out: string
     turns: 1,
     currentPlayer: 'civ1',
     currentTurnStartTime: 1000,
+    gameParameters: { minutesUntilSkipTurn: 90, minutesUntilForceResign: 4320, minutesRecoveredPerTurn: 0 },
     civilizations: [
       { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 60 },
     ],
@@ -147,8 +148,10 @@ void test('/list shows civ name, player id, started and deadline', async () => {
   await handleMessage(d, { chatId: 1, text: '/subscribe g1 uA' });
   out.length = 0;
   await handleMessage(d, { chatId: 1, text: '/list' });
-  // 30 min elapsed of a 60-min turn → started 30m ago, deadline in 30m
-  assert.match(out[0], /Game g1\nTurn 1\nRome's turn - started 30m ago, deadline in 30m\.\nYou: Rome/);
+  assert.match(
+    out[0],
+    /Game g1\nTurn 1\nRome's turn - started 30m ago\.\n {3}⏭ Skip in: 1h\n {3}⏳ Total left: 30m\nYou: Rome/,
+  );
 });
 
 void test('/list reports finished game on 404', async () => {
@@ -175,6 +178,7 @@ void test('/list omits timing when currentTurnStartTime is 0', async () => {
     turns: 1,
     currentPlayer: 'civ1',
     currentTurnStartTime: 0,
+    gameParameters: { minutesUntilSkipTurn: 0, minutesUntilForceResign: 0, minutesRecoveredPerTurn: 0 },
     civilizations: [
       { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 60 },
     ],
@@ -191,6 +195,7 @@ void test("/list shows whose turn and your civ when it's another civ's turn", as
     turns: 1,
     currentPlayer: 'civ1',
     currentTurnStartTime: 0,
+    gameParameters: { minutesUntilSkipTurn: 0, minutesUntilForceResign: 0, minutesRecoveredPerTurn: 0 },
     civilizations: [
       { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 60 },
       { civID: 'civ2', civName: 'Greece', playerId: 'uB', playerType: 'Human', playerMinutesBeforeForceResign: 60 },
@@ -209,6 +214,7 @@ void test('/list shows started but omits deadline when force-resign disabled', a
     turns: 1,
     currentPlayer: 'civ1',
     currentTurnStartTime: 1000,
+    gameParameters: { minutesUntilSkipTurn: 0, minutesUntilForceResign: 0, minutesRecoveredPerTurn: 0 },
     civilizations: [
       { civID: 'civ1', civName: 'Greece', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 0 },
     ],

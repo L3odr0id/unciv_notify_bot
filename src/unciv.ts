@@ -10,10 +10,17 @@ export interface CivPreview {
   playerMinutesBeforeForceResign: number;
 }
 
+export interface GameParams {
+  minutesUntilSkipTurn: number;
+  minutesUntilForceResign: number;
+  minutesRecoveredPerTurn: number;
+}
+
 export interface GamePreview {
   turns: number;
   currentPlayer: string;
   currentTurnStartTime: number;
+  gameParameters: GameParams;
   civilizations: CivPreview[];
 }
 
@@ -46,10 +53,16 @@ export function decodePreview(body: string): GamePreview {
   const num = (v: unknown, fallback: number): number =>
     typeof v === 'number' && Number.isFinite(v) ? v : fallback;
   const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+  const params = rec(root.gameParameters);
   return {
     turns: root.turns,
     currentPlayer: root.currentPlayer,
     currentTurnStartTime: num(root.currentTurnStartTime, 0),
+    gameParameters: {
+      minutesUntilSkipTurn: num(params.minutesUntilSkipTurn, 0),
+      minutesUntilForceResign: num(params.minutesUntilForceResign, 0),
+      minutesRecoveredPerTurn: num(params.minutesRecoveredPerTurn, 0),
+    },
     civilizations: root.civilizations.map((raw) => {
       const c = rec(raw);
       return {
@@ -84,19 +97,29 @@ export function civForPlayer(p: GamePreview, userId: string): string | null {
   return civ ? civ.civName : null;
 }
 
-export function currentTurn(
-  p: GamePreview,
-): { civName: string; playerId: string; startedMs: number; deadlineMs: number | null } | null {
+export function currentTurn(p: GamePreview): TurnTimers | null {
   const civ = p.civilizations.find((c) => c.civID === p.currentPlayer);
   if (!civ) return null;
-  const forceResignMin = civ.playerMinutesBeforeForceResign;
+  const gp = p.gameParameters;
+  const start = p.currentTurnStartTime;
   return {
     civName: civ.civName,
     playerId: civ.playerId,
-    startedMs: p.currentTurnStartTime,
-    // 0 (or missing) means force-resign is disabled — there is no deadline.
-    deadlineMs: forceResignMin > 0 ? p.currentTurnStartTime + forceResignMin * 60000 : null,
+    startedMs: start,
+    skipDeadlineMs: gp.minutesUntilSkipTurn > 0 ? start + gp.minutesUntilSkipTurn * 60000 : null,
+    totalDeadlineMs:
+      gp.minutesUntilForceResign > 0 ? start + civ.playerMinutesBeforeForceResign * 60000 : null,
+    recoveredPerTurnMin: gp.minutesRecoveredPerTurn,
   };
+}
+
+export interface TurnTimers {
+  civName: string;
+  playerId: string;
+  startedMs: number;
+  skipDeadlineMs: number | null;
+  totalDeadlineMs: number | null;
+  recoveredPerTurnMin: number;
 }
 
 export function formatDuration(ms: number): string {
@@ -104,7 +127,25 @@ export function formatDuration(ms: number): string {
   const days = Math.floor(totalMin / 1440);
   const hours = Math.floor((totalMin % 1440) / 60);
   const minutes = totalMin % 60;
-  if (days > 0) return `${days}d ${hours}h`;
+  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
   if (hours > 0) return `${hours}h`;
   return `${minutes}m`;
+}
+
+export function formatTurnTimers(
+  t: Pick<TurnTimers, 'skipDeadlineMs' | 'totalDeadlineMs' | 'recoveredPerTurnMin'>,
+  now: number,
+): string[] {
+  const lines: string[] = [];
+  if (t.skipDeadlineMs !== null) {
+    const r = t.skipDeadlineMs - now;
+    lines.push(`⏭ Skip in: ${r <= 0 ? 'can be skipped now' : formatDuration(r)}`);
+  }
+  if (t.totalDeadlineMs !== null) {
+    const r = t.totalDeadlineMs - now;
+    const recovered =
+      t.recoveredPerTurnMin > 0 ? ` (+${formatDuration(t.recoveredPerTurnMin * 60000)}/turn)` : '';
+    lines.push(`⏳ Total left: ${r <= 0 ? 'overdue' : formatDuration(r)}${recovered}`);
+  }
+  return lines;
 }
