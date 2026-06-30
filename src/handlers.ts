@@ -16,7 +16,15 @@ import {
   removeByUsername,
   removeByChat,
 } from './db';
-import { GamePreview, GameNotFound, currentTurn, civForPlayer, formatDuration, formatTurnTimers } from './unciv';
+import {
+  GamePreview,
+  GameNotFound,
+  currentTurn,
+  civForPlayer,
+  formatDuration,
+  formatTurnTimers,
+  formatBlame,
+} from './unciv';
 import { MIN_INTERVAL_SECONDS } from './constants';
 import { log } from './log';
 
@@ -45,6 +53,7 @@ export const USAGE = [
   'Commands:',
   '  /subscribe <game_id> <user_id> — get notified on your turn',
   '  /list — your subscriptions with live turn status',
+  '  /blame <game_id> — turn-timer settings and each civ’s idle status',
   '  /unsubscribe <game_id> [user_id] — stop notifications',
   '  /getinterval — current polling interval in seconds',
 ].join('\n');
@@ -114,6 +123,19 @@ export async function handleMessage(deps: HandlerDeps, msg: IncomingMsg): Promis
       return `Game ${s.game_id}\nTurn ${p.turns}\n${turn}${timerBlock}\nYou: ${you}`;
     });
     return deps.reply(`Your subscriptions:\n\n${lines.join('\n\n')}`);
+  }
+
+  if (text.startsWith('/blame')) {
+    const [, gameId] = text.split(/\s+/);
+    if (!gameId) return deps.reply('Usage: /blame <game_id>');
+    let preview: GamePreview;
+    try {
+      preview = await deps.fetchPreview(gameId);
+    } catch (e) {
+      if (e instanceof GameNotFound) return deps.reply(`Game ${gameId} not found or finished.`);
+      return deps.reply('Server unreachable, try later.');
+    }
+    return deps.reply(formatBlame(gameId, preview));
   }
 
   if (text.startsWith('/unsubscribe')) {

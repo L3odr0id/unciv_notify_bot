@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import zlib from 'node:zlib';
-import { decodePreview, isUsersTurn, DecodeError, fetchPreview, GameNotFound, currentTurn, formatDuration, formatTurnTimers } from './unciv';
+import { decodePreview, isUsersTurn, DecodeError, fetchPreview, GameNotFound, currentTurn, formatDuration, formatTurnTimers, formatBlame } from './unciv';
+import type { GamePreview } from './unciv';
 
 function makeBlob(obj: unknown): string {
   return zlib.gzipSync(Buffer.from(JSON.stringify(obj))).toString('base64');
@@ -199,18 +200,18 @@ void test('formatDuration drops trailing 0h for whole days', () => {
   assert.equal(formatDuration((1440 + 60) * 60000), '1d 1h');
 });
 
-void test('formatTurnTimers shows skip + total + recovered', () => {
+void test('formatTurnTimers shows skip + kick', () => {
   const lines = formatTurnTimers(
     { skipDeadlineMs: 1000 + 60 * 60000, totalDeadlineMs: 1000 + 120 * 60000, recoveredPerTurnMin: 1440 },
     1000,
   );
-  assert.deepEqual(lines, ['⏭ Skip in: 1h', '⏳ Total left: 2h (+1d/turn)']);
+  assert.deepEqual(lines, ['⏭ Skip in: 1h', '⏳ Kick in: 2h']);
 });
 
-void test('formatTurnTimers omits disabled timers and recovered suffix', () => {
+void test('formatTurnTimers omits disabled timers', () => {
   assert.deepEqual(
     formatTurnTimers({ skipDeadlineMs: null, totalDeadlineMs: 1000 + 60 * 60000, recoveredPerTurnMin: 0 }, 1000),
-    ['⏳ Total left: 1h'],
+    ['⏳ Kick in: 1h'],
   );
   assert.deepEqual(
     formatTurnTimers({ skipDeadlineMs: null, totalDeadlineMs: null, recoveredPerTurnMin: 0 }, 1000),
@@ -221,6 +222,47 @@ void test('formatTurnTimers omits disabled timers and recovered suffix', () => {
 void test('formatTurnTimers shows skippable/overdue past the deadline', () => {
   assert.deepEqual(
     formatTurnTimers({ skipDeadlineMs: 500, totalDeadlineMs: 500, recoveredPerTurnMin: 0 }, 1000),
-    ['⏭ Skip in: can be skipped now', '⏳ Total left: overdue'],
+    ['⏭ Skip in: can be skipped now', '⏳ Kick in: overdue'],
   );
+});
+
+const blamePreview: GamePreview = {
+  turns: 10,
+  currentPlayer: 'civ1',
+  currentTurnStartTime: 1000,
+  gameParameters: { minutesUntilSkipTurn: 1440, minutesUntilForceResign: 4320, minutesRecoveredPerTurn: 1440 },
+  civilizations: [
+    { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 4320 },
+    { civID: 'civ2', civName: 'Greece', playerId: 'uB', playerType: 'Human', playerMinutesBeforeForceResign: 0 },
+    { civID: 'civ3', civName: 'Polynesia', playerId: '', playerType: 'AI', playerMinutesBeforeForceResign: 4320 },
+    { civID: 'civ4', civName: 'Venice', playerId: '', playerType: '', playerMinutesBeforeForceResign: 4320 },
+  ],
+};
+
+void test('formatBlame reports settings, formula, no-admin note and per-civ idle', () => {
+  const out = formatBlame('g1', blamePreview);
+  assert.match(out, /🕒 Turn timers — game g1/);
+  assert.match(out, /playerIdle = prevIdle \+ timeUsedThisTurn − timeRegained/);
+  assert.match(out, /1\. Turn can be skipped after 1d\./);
+  assert.match(out, /2\. Player can be kicked after 3d of total idle\./);
+  assert.match(out, /3\. Idle regained per completed turn: 1d\./);
+  assert.match(out, /No admins in this game/);
+  assert.match(out, /• Rome — 3d ← current turn/);
+  assert.match(out, /• Greece — 0m/);
+  // Non-human civs (AI majors, city-states, barbarians) are excluded.
+  assert.doesNotMatch(out, /Polynesia/);
+  assert.doesNotMatch(out, /Venice/);
+  // Only the current player carries the marker.
+  assert.equal((out.match(/← current turn/g) ?? []).length, 1);
+});
+
+void test('formatBlame marks disabled timers and no recovery', () => {
+  const p: GamePreview = {
+    ...blamePreview,
+    gameParameters: { minutesUntilSkipTurn: 0, minutesUntilForceResign: 0, minutesRecoveredPerTurn: 0 },
+  };
+  const out = formatBlame('g1', p);
+  assert.match(out, /1\. Turn can be skipped after disabled\./);
+  assert.match(out, /2\. Player can be kicked after disabled of total idle\./);
+  assert.match(out, /3\. Idle regained per completed turn: none\./);
 });

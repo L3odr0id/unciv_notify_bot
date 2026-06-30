@@ -56,7 +56,7 @@ void test('notification includes skip and total timers when enabled', async () =
   await pollGame(deps, 'g1');
   assert.equal(
     sent[0].text,
-    "🔔 It is Rome's (uA) turn in game g1.\n   ⏭ Skip in: 30m\n   ⏳ Total left: 1h",
+    "🔔 It is Rome's (uA) turn in game g1.\n   ⏭ Skip in: 30m\n   ⏳ Kick in: 1h",
   );
 });
 

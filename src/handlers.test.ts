@@ -150,7 +150,7 @@ void test('/list shows civ name, player id, started and deadline', async () => {
   await handleMessage(d, { chatId: 1, text: '/list' });
   assert.match(
     out[0],
-    /Game g1\nTurn 1\nRome's turn - started 30m ago\.\n {3}⏭ Skip in: 1h\n {3}⏳ Total left: 30m\nYou: Rome/,
+    /Game g1\nTurn 1\nRome's turn - started 30m ago\.\n {3}⏭ Skip in: 1h\n {3}⏳ Kick in: 30m\nYou: Rome/,
   );
 });
 
@@ -303,4 +303,43 @@ void test('/unblock something not blocked reports not in blocklist', async () =>
   const { deps: d, out } = deps({ adminSet: new Set(['boss']) });
   await handleMessage(d, { chatId: 100, username: 'boss', text: '/unblock @ghost' });
   assert.match(out[0], /not in blocklist/i);
+});
+
+const blameGame: GamePreview = {
+  turns: 10,
+  currentPlayer: 'civ1',
+  currentTurnStartTime: 1000,
+  gameParameters: { minutesUntilSkipTurn: 1440, minutesUntilForceResign: 4320, minutesRecoveredPerTurn: 1440 },
+  civilizations: [
+    { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 4320 },
+    { civID: 'civ2', civName: 'Greece', playerId: 'uB', playerType: 'Human', playerMinutesBeforeForceResign: 0 },
+  ],
+};
+
+void test('/blame without game_id shows usage', async () => {
+  const { deps: d, out } = deps();
+  await handleMessage(d, { chatId: 1, text: '/blame' });
+  assert.match(out[0], /usage: \/blame/i);
+});
+
+void test('/blame reports settings, no-admin note and per-civ idle', async () => {
+  const { deps: d, out } = deps({ fetchPreview: () => Promise.resolve(blameGame) });
+  await handleMessage(d, { chatId: 1, text: '/blame g1' });
+  assert.match(out[0], /Turn timers — game g1/);
+  assert.match(out[0], /Player can be kicked after 3d of total idle/);
+  assert.match(out[0], /No admins in this game/);
+  assert.match(out[0], /• Rome — 3d ← current turn/);
+  assert.match(out[0], /• Greece — 0m/);
+});
+
+void test('/blame reports game not found', async () => {
+  const { deps: d, out } = deps({ fetchPreview: () => Promise.reject(new GameNotFound('g1')) });
+  await handleMessage(d, { chatId: 1, text: '/blame g1' });
+  assert.match(out[0], /not found or finished/i);
+});
+
+void test('/blame reports unreachable server on other error', async () => {
+  const { deps: d, out } = deps({ fetchPreview: () => Promise.reject(new Error('boom')) });
+  await handleMessage(d, { chatId: 1, text: '/blame g1' });
+  assert.match(out[0], /unreachable/i);
 });
