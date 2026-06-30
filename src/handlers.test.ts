@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import { openDb, listSubscriptions, getSetting, setSetting, adminChatIds } from './db';
 import { GamePreview } from './unciv';
 import { GameNotFound, formatDuration } from './unciv';
+import { SendOpts } from './tg';
 import {
   normalizeUsername,
   parseAdminSet,
@@ -29,8 +30,9 @@ void test('formatDuration short forms', () => {
   assert.equal(formatDuration(3 * 86400000 + 4 * 3600000), '3d 4h');
 });
 
-function deps(over: Partial<HandlerDeps> = {}): { deps: HandlerDeps; out: string[] } {
+function deps(over: Partial<HandlerDeps> = {}): { deps: HandlerDeps; out: string[]; opts: (SendOpts | undefined)[] } {
   const out: string[] = [];
+  const opts: (SendOpts | undefined)[] = [];
   const preview: GamePreview = {
     turns: 1,
     currentPlayer: 'civ1',
@@ -42,14 +44,16 @@ function deps(over: Partial<HandlerDeps> = {}): { deps: HandlerDeps; out: string
   };
   return {
     out,
+    opts,
     deps: {
       db: openDb(':memory:'),
       adminSet: new Set(),
       fallbackIntervalSeconds: 60,
       now: () => 1000 + 30 * 60000, // 30 min into the turn
       fetchPreview: () => Promise.resolve(preview),
-      reply: (t) => {
+      reply: (t, o) => {
         out.push(t);
+        opts.push(o);
         return Promise.resolve();
       },
       ...over,
@@ -150,7 +154,7 @@ void test('/list shows civ name, player id, started and deadline', async () => {
   await handleMessage(d, { chatId: 1, text: '/list' });
   assert.match(
     out[0],
-    /Game g1\nTurn 1\nRome's turn - started 30m ago\.\n {3}⏭ Skip in: 1h\n {3}⏳ Kick in: 30m\nYou: Rome/,
+    /Game `g1`\nTurn 1\nRome's turn - started 30m ago\.\n {3}⏭ Skip in: 1h\n {3}⏳ Kick in: 30m\nYou: Rome/,
   );
 });
 
@@ -161,7 +165,7 @@ void test('/list reports finished game on 404', async () => {
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
-  assert.match(out[0], /Game g1\nFinished or deleted\./);
+  assert.match(out[0], /Game `g1`\nFinished or deleted\./);
 });
 
 void test('/list reports unreachable server on other error', async () => {
@@ -170,7 +174,7 @@ void test('/list reports unreachable server on other error', async () => {
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
-  assert.match(out[0], /Game g1\nServer unreachable, try later\./);
+  assert.match(out[0], /Game `g1`\nServer unreachable, try later\./);
 });
 
 void test('/list omits timing when currentTurnStartTime is 0', async () => {
@@ -187,7 +191,7 @@ void test('/list omits timing when currentTurnStartTime is 0', async () => {
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
-  assert.match(out[0], /Game g1\nTurn 1\nRome's turn\.\nYou: Rome$/m);
+  assert.match(out[0], /Game `g1`\nTurn 1\nRome's turn\.\nYou: Rome$/m);
 });
 
 void test("/list shows whose turn and your civ when it's another civ's turn", async () => {
@@ -206,7 +210,7 @@ void test("/list shows whose turn and your civ when it's another civ's turn", as
   addSubscription(d.db, 1, 'g1', 'uB', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
   // Rome's turn, but the subscriber plays Greece
-  assert.match(out[0], /Game g1\nTurn 1\nRome's turn\.\nYou: Greece$/m);
+  assert.match(out[0], /Game `g1`\nTurn 1\nRome's turn\.\nYou: Greece$/m);
 });
 
 void test('/list shows started but omits deadline when force-resign disabled', async () => {
@@ -223,7 +227,7 @@ void test('/list shows started but omits deadline when force-resign disabled', a
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
-  assert.match(out[0], /Game g1\nTurn 1\nGreece's turn - started 30m ago\.\nYou: Greece$/m);
+  assert.match(out[0], /Game `g1`\nTurn 1\nGreece's turn - started 30m ago\.\nYou: Greece/);
 });
 
 void test('register stores normalized username', async () => {
@@ -254,7 +258,7 @@ void test('/subs lists all subscriptions for admin', async () => {
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 5, 'g1', 'uA', 'bob');
   await handleMessage(d, { chatId: 5, username: 'boss', text: '/subs' });
-  assert.match(out[0], /5 \| @bob \| g1 \| uA/);
+  assert.match(out[0], /5 \| @bob \| `g1` \| `uA`/);
 });
 
 void test('/block requires admin', async () => {
@@ -305,41 +309,12 @@ void test('/unblock something not blocked reports not in blocklist', async () =>
   assert.match(out[0], /not in blocklist/i);
 });
 
-const blameGame: GamePreview = {
-  turns: 10,
-  currentPlayer: 'civ1',
-  currentTurnStartTime: 1000,
-  gameParameters: { minutesUntilSkipTurn: 1440, minutesUntilForceResign: 4320, minutesRecoveredPerTurn: 1440 },
-  civilizations: [
-    { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 4320 },
-    { civID: 'civ2', civName: 'Greece', playerId: 'uB', playerType: 'Human', playerMinutesBeforeForceResign: 0 },
-  ],
-};
-
-void test('/blame without game_id shows usage', async () => {
-  const { deps: d, out } = deps();
-  await handleMessage(d, { chatId: 1, text: '/blame' });
-  assert.match(out[0], /usage: \/blame/i);
-});
-
-void test('/blame reports settings, no-admin note and per-civ idle', async () => {
-  const { deps: d, out } = deps({ fetchPreview: () => Promise.resolve(blameGame) });
-  await handleMessage(d, { chatId: 1, text: '/blame g1' });
-  assert.match(out[0], /Turn timers — game g1/);
-  assert.match(out[0], /Player can be kicked after 3d of total idle/);
-  assert.match(out[0], /No admins in this game/);
-  assert.match(out[0], /• Rome — 3d ← current turn/);
-  assert.match(out[0], /• Greece — 0m/);
-});
-
-void test('/blame reports game not found', async () => {
-  const { deps: d, out } = deps({ fetchPreview: () => Promise.reject(new GameNotFound('g1')) });
-  await handleMessage(d, { chatId: 1, text: '/blame g1' });
-  assert.match(out[0], /not found or finished/i);
-});
-
-void test('/blame reports unreachable server on other error', async () => {
-  const { deps: d, out } = deps({ fetchPreview: () => Promise.reject(new Error('boom')) });
-  await handleMessage(d, { chatId: 1, text: '/blame g1' });
-  assert.match(out[0], /unreachable/i);
+void test('/list is sent with markdown parse mode', async () => {
+  const { deps: d, out, opts } = deps();
+  await handleMessage(d, { chatId: 1, text: '/subscribe g1 uA' });
+  out.length = 0;
+  opts.length = 0;
+  await handleMessage(d, { chatId: 1, text: '/list' });
+  assert.match(out[0], /Game `g1`/);
+  assert.deepEqual(opts[0], { markdown: true });
 });

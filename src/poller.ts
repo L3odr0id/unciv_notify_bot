@@ -8,6 +8,7 @@ import {
 } from './db';
 import { GamePreview, GameNotFound, isUsersTurn, currentTurn, formatTurnTimers } from './unciv';
 import { Alerter } from './alerts';
+import { SendOpts, code, esc } from './tg';
 import { log } from './log';
 
 const failingGames = new Set<string>();
@@ -15,7 +16,7 @@ const failingGames = new Set<string>();
 export interface PollDeps {
   db: DB;
   fetchPreview: (gameId: string) => Promise<GamePreview>;
-  send: (chatId: number, text: string) => Promise<void>;
+  send: (chatId: number, text: string, opts?: SendOpts) => Promise<void>;
   alerter: Alerter;
   now?: () => number;
 }
@@ -29,7 +30,7 @@ export async function pollGame(deps: PollDeps, gameId: string): Promise<void> {
       const subs = subscribersForGame(deps.db, gameId);
       for (const s of subs) {
         try {
-          await deps.send(s.chat_id, `Game ${gameId} has finished or was removed.`);
+          await deps.send(s.chat_id, `Game ${code(gameId)} has finished or was removed.`, { markdown: true });
         } catch (err) {
           await deps.alerter.telegramFailure(err);
         }
@@ -63,7 +64,11 @@ export async function pollGame(deps: PollDeps, gameId: string): Promise<void> {
   for (const s of subscribersForGame(deps.db, gameId)) {
     if (isUsersTurn(preview, s.user_id)) {
       try {
-        await deps.send(s.chat_id, `🔔 It is ${civName}'s (${s.user_id}) turn in game ${gameId}.${suffix}`);
+        await deps.send(
+          s.chat_id,
+          `🔔 It is ${esc(civName)}'s (${code(s.user_id)}) turn in game ${code(gameId)}.${suffix}`,
+          { markdown: true },
+        );
         log.info(`notified ${s.user_id} for game ${gameId} (turn ${preview.turns})`);
       } catch (err) {
         await deps.alerter.telegramFailure(err);

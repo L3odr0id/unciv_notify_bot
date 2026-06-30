@@ -23,9 +23,9 @@ import {
   civForPlayer,
   formatDuration,
   formatTurnTimers,
-  formatBlame,
 } from './unciv';
 import { MIN_INTERVAL_SECONDS } from './constants';
+import { SendOpts, code, esc } from './tg';
 import { log } from './log';
 
 export function normalizeUsername(u: string): string {
@@ -53,7 +53,6 @@ export const USAGE = [
   'Commands:',
   '  /subscribe <game_id> <user_id> — get notified on your turn',
   '  /list — your subscriptions with live turn status',
-  '  /blame <game_id> — turn-timer settings and each civ’s idle status',
   '  /unsubscribe <game_id> [user_id] — stop notifications',
   '  /getinterval — current polling interval in seconds',
 ].join('\n');
@@ -70,7 +69,7 @@ export interface HandlerDeps {
   fallbackIntervalSeconds: number;
   now: () => number;
   fetchPreview: (gameId: string) => Promise<GamePreview>;
-  reply: (text: string) => Promise<void>;
+  reply: (text: string, opts?: SendOpts) => Promise<void>;
 }
 
 function isAdmin(deps: HandlerDeps, msg: IncomingMsg): boolean {
@@ -106,10 +105,10 @@ export async function handleMessage(deps: HandlerDeps, msg: IncomingMsg): Promis
     );
     const lines = subs.map((s) => {
       const p = previews.get(s.game_id);
-      if (p instanceof GameNotFound) return `Game ${s.game_id}\nFinished or deleted.`;
-      if (p instanceof Error || !p) return `Game ${s.game_id}\nServer unreachable, try later.`;
+      if (p instanceof GameNotFound) return `Game ${code(s.game_id)}\nFinished or deleted.`;
+      if (p instanceof Error || !p) return `Game ${code(s.game_id)}\nServer unreachable, try later.`;
       const ct = currentTurn(p);
-      let turn = ct ? `${ct.civName}'s turn` : 'Turn unknown';
+      let turn = ct ? `${esc(ct.civName)}'s turn` : 'Turn unknown';
       let timerBlock = '';
       if (ct && ct.startedMs > 0) {
         const now = deps.now();
@@ -119,23 +118,10 @@ export async function handleMessage(deps: HandlerDeps, msg: IncomingMsg): Promis
       }
       turn += '.';
       const civName = civForPlayer(p, s.user_id);
-      const you = civName ? civName : `player ${s.user_id} (not in game)`;
-      return `Game ${s.game_id}\nTurn ${p.turns}\n${turn}${timerBlock}\nYou: ${you}`;
+      const you = civName ? esc(civName) : `player ${code(s.user_id)} (not in game)`;
+      return `Game ${code(s.game_id)}\nTurn ${p.turns}\n${turn}${timerBlock}\nYou: ${you}`;
     });
-    return deps.reply(`Your subscriptions:\n\n${lines.join('\n\n')}`);
-  }
-
-  if (text.startsWith('/blame')) {
-    const [, gameId] = text.split(/\s+/);
-    if (!gameId) return deps.reply('Usage: /blame <game_id>');
-    let preview: GamePreview;
-    try {
-      preview = await deps.fetchPreview(gameId);
-    } catch (e) {
-      if (e instanceof GameNotFound) return deps.reply(`Game ${gameId} not found or finished.`);
-      return deps.reply('Server unreachable, try later.');
-    }
-    return deps.reply(formatBlame(gameId, preview));
+    return deps.reply(`Your subscriptions:\n\n${lines.join('\n\n')}`, { markdown: true });
   }
 
   if (text.startsWith('/unsubscribe')) {
@@ -176,9 +162,9 @@ export async function handleMessage(deps: HandlerDeps, msg: IncomingMsg): Promis
     if (subs.length === 0) return deps.reply('No subscriptions.');
     const lines = subs
       .slice(0, 50)
-      .map((s) => `${s.chat_id} | @${s.username || '?'} | ${s.game_id} | ${s.user_id}`);
+      .map((s) => `${s.chat_id} | @${esc(s.username || '?')} | ${code(s.game_id)} | ${code(s.user_id)}`);
     if (subs.length > 50) lines.push(`…and ${subs.length - 50} more.`);
-    return deps.reply(lines.join('\n'));
+    return deps.reply(lines.join('\n'), { markdown: true });
   }
 
   if (text.startsWith('/block')) {
@@ -225,14 +211,16 @@ async function subscribe(deps: HandlerDeps, msg: IncomingMsg, gameId: string, us
   try {
     preview = await deps.fetchPreview(gameId);
   } catch (e) {
-    if (e instanceof GameNotFound) return deps.reply(`Game ${gameId} not found.`);
+    if (e instanceof GameNotFound) return deps.reply(`Game ${code(gameId)} not found.`, { markdown: true });
     return deps.reply('Could not reach the Unciv server, try again later.');
   }
   if (!preview.civilizations.some((c) => c.playerId === userId)) {
     log.debug(`register rejected: ${userId} not in ${gameId}`);
-    return deps.reply(`User ${userId} is not a player in game ${gameId}.`);
+    return deps.reply(`User ${code(userId)} is not a player in game ${code(gameId)}.`, { markdown: true });
   }
   addSubscription(deps.db, msg.chatId, gameId, userId, uname);
   log.info(`chat ${msg.chatId} registered ${userId} in ${gameId}`);
-  return deps.reply(`Subscribed: you'll be notified on ${userId}'s turn in ${gameId}.`);
+  return deps.reply(`Subscribed: you'll be notified on ${code(userId)}'s turn in ${code(gameId)}.`, {
+    markdown: true,
+  });
 }

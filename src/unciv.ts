@@ -160,38 +160,3 @@ export function formatTurnTimers(
   }
   return lines;
 }
-
-// Renders the full /blame report for a game: the idle formula, the three timer
-// settings, the no-admin note, and each civ's raw playerMinutesBeforeForceResign.
-export function formatBlame(gameId: string, p: GamePreview): string {
-  const gp = p.gameParameters;
-  const limit = (min: number): string => (min > 0 ? formatDuration(min * 60000) : 'disabled');
-  const regain = gp.minutesRecoveredPerTurn > 0 ? formatDuration(gp.minutesRecoveredPerTurn * 60000) : 'none';
-
-  // Only human players can be skipped/kicked; AI, city-states and barbarians are noise here.
-  const civLines = p.civilizations
-    .filter((c) => c.playerType === 'Human')
-    .map((c) => {
-      const here = c.civID === p.currentPlayer ? ' ← current turn' : '';
-      return `• ${c.civName} — ${formatDuration(c.playerMinutesBeforeForceResign * 60000)}${here}`;
-    });
-
-  return [
-    `🕒 Turn timers — game ${gameId}`,
-    '',
-    "Each turn a player's idle counter updates:",
-    '  playerIdle = prevIdle + timeUsedThisTurn − timeRegained',
-    'A player can be skipped or kicked once their idle passes the limit below.',
-    '',
-    'Settings:',
-    `1. Turn can be skipped after ${limit(gp.minutesUntilSkipTurn)}.`,
-    `2. Player can be kicked after ${limit(gp.minutesUntilForceResign)} of total idle.`,
-    `3. Idle regained per completed turn: ${regain}.`,
-    '',
-    '⚠️ No admins in this game — any player can skip the current player’s turn, ' +
-      'or kick any player who is over the limit.',
-    '',
-    'playerMinutesBeforeForceResign per civ:',
-    ...civLines,
-  ].join('\n');
-}

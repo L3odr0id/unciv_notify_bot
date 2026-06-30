@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { openDb, addSubscription, getGameState, distinctGameIds, DB } from './db';
 import { GamePreview, GameNotFound } from './unciv';
+import { SendOpts } from './tg';
 import { Alerter } from './alerts';
 import { pollGame, pollOnce, startPoller, PollDeps } from './poller';
 import { setLevel } from './log';
@@ -19,9 +20,9 @@ const preview = (currentPlayer: string, turns = 1): GamePreview => ({
 });
 
 function setup(fetchPreview: PollDeps['fetchPreview']) {
-  const sent: { chatId: number; text: string }[] = [];
-  const send = (chatId: number, text: string) => {
-    sent.push({ chatId, text });
+  const sent: { chatId: number; text: string; opts?: SendOpts }[] = [];
+  const send = (chatId: number, text: string, opts?: SendOpts) => {
+    sent.push({ chatId, text, opts });
     return Promise.resolve();
   };
   const db = openDb(':memory:');
@@ -36,7 +37,7 @@ void test('notifies only the subscriber whose turn it is', async () => {
   await pollGame(deps, 'g1');
   assert.equal(sent.length, 1);
   assert.equal(sent[0].chatId, 10);
-  assert.match(sent[0].text, /It is Rome's \(uA\) turn in game g1/);
+  assert.match(sent[0].text, /It is Rome's \(`uA`\) turn in game `g1`/);
   assert.deepEqual(getGameState(db, 'g1'), { last_turns: 1, last_current_player: 'civ1' });
 });
 
@@ -56,8 +57,9 @@ void test('notification includes skip and total timers when enabled', async () =
   await pollGame(deps, 'g1');
   assert.equal(
     sent[0].text,
-    "🔔 It is Rome's (uA) turn in game g1.\n   ⏭ Skip in: 30m\n   ⏳ Kick in: 1h",
+    "🔔 It is Rome's (`uA`) turn in game `g1`.\n   ⏭ Skip in: 30m\n   ⏳ Kick in: 1h",
   );
+  assert.deepEqual(sent[0].opts, { markdown: true });
 });
 
 void test('notification omits deadline when force-resign disabled', async () => {
@@ -73,7 +75,7 @@ void test('notification omits deadline when force-resign disabled', async () => 
   const { db, sent, deps } = setup(() => Promise.resolve(noDeadline));
   addSubscription(db, 10, 'g1', 'uA');
   await pollGame(deps, 'g1');
-  assert.equal(sent[0].text, "🔔 It is Rome's (uA) turn in game g1.");
+  assert.equal(sent[0].text, "🔔 It is Rome's (`uA`) turn in game `g1`.");
 });
 
 void test('no notification when state unchanged', async () => {
