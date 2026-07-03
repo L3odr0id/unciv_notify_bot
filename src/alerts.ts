@@ -49,10 +49,17 @@ export class Alerter {
   }
 
   async telegramFailure(err: unknown): Promise<void> {
+    const msg = String((err as Error)?.message ?? err);
+    // Transient network errors are noisy and self-heal on the next poll; log
+    // but never page admins about them.
+    if (/ECONNRESET|ETIMEDOUT|ECONNREFUSED|EAI_AGAIN|EPIPE|socket hang up/i.test(msg)) {
+      log.debug(`Transient Telegram send failure (ignored): ${msg}`);
+      return;
+    }
     const t = this.now();
     if (t - this.lastTgAlert < this.tgThrottleMs) return;
     this.lastTgAlert = t;
-    const text = `⚠️ Telegram send failure: ${(err as Error)?.message ?? err}`;
+    const text = `⚠️ Telegram send failure: ${msg}`;
     log.warn(text);
     await this.broadcast(text);
   }

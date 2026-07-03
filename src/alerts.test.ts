@@ -49,6 +49,17 @@ void test('telegramFailure is throttled by time window', async () => {
   assert.equal(c.sent.length, 2);
 });
 
+void test('telegramFailure ignores transient network errors', async () => {
+  const c = collector();
+  const a = new Alerter({ send: c.send, adminChatIds: () => [1], tgThrottleMs: 0 });
+  await a.telegramFailure(new Error('EFATAL: Error: read ECONNRESET'));
+  await a.telegramFailure(new Error('socket hang up'));
+  await a.telegramFailure(new Error('ETIMEDOUT'));
+  assert.equal(c.sent.length, 0);
+  await a.telegramFailure(new Error('403 Forbidden: bot blocked')); // real → alerts
+  assert.equal(c.sent.length, 1);
+});
+
 void test('fatal alerts all admins immediately', async () => {
   const c = collector();
   const a = new Alerter({ send: c.send, adminChatIds: () => [1, 2] });
