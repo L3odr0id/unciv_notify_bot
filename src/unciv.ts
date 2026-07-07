@@ -26,7 +26,7 @@ export interface GameParams {
 }
 
 export interface GamePreview {
-  turns: number;
+  turns: number | null;
   currentPlayer: string;
   currentTurnStartTime: number;
   gameParameters: GameParams;
@@ -53,18 +53,20 @@ export function decodePreview(body: string): GamePreview {
     typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : {};
   const root = rec(obj);
   if (
-    typeof root.turns !== 'number' ||
     typeof root.currentPlayer !== 'string' ||
     !Array.isArray(root.civilizations)
   ) {
     throw new DecodeError('preview missing required fields');
+  }
+  if (root.turns !== undefined && typeof root.turns !== 'number') {
+    throw new DecodeError('preview has invalid turns field');
   }
   const num = (v: unknown, fallback: number): number =>
     typeof v === 'number' && Number.isFinite(v) ? v : fallback;
   const str = (v: unknown): string => (typeof v === 'string' ? v : '');
   const params = rec(root.gameParameters);
   return {
-    turns: root.turns,
+    turns: typeof root.turns === 'number' ? root.turns : null,
     currentPlayer: root.currentPlayer,
     currentTurnStartTime: num(root.currentTurnStartTime, 0),
     gameParameters: {

@@ -119,7 +119,8 @@ export async function handleMessage(deps: HandlerDeps, msg: IncomingMsg): Promis
       turn += '.';
       const civName = civForPlayer(p, s.user_id);
       const you = civName ? esc(civName) : `player ${code(s.user_id)} (not in game)`;
-      return `Game ${code(s.game_id)}\nTurn ${p.turns}\n${turn}${timerBlock}\nYou: ${you}`;
+      const turnLine = p.turns === null ? 'Turn unknown' : `Turn ${p.turns}`;
+      return `Game ${code(s.game_id)}\n${turnLine}\n${turn}${timerBlock}\nYou: ${you}`;
     });
     return deps.reply(`Your subscriptions:\n\n${lines.join('\n\n')}`, { markdown: true });
   }

@@ -50,9 +50,11 @@ export async function pollGame(deps: PollDeps, gameId: string): Promise<void> {
   deps.alerter.recordSuccess(gameId);
   if (failingGames.delete(gameId)) log.info(`game ${gameId} recovered`);
 
+  const turnKey = preview.turns ?? preview.currentTurnStartTime;
+  const turnLabel = preview.turns === null ? 'unknown' : String(preview.turns);
   const state = getGameState(deps.db, gameId);
-  if (state && state.last_turns === preview.turns && state.last_current_player === preview.currentPlayer) {
-    log.debug(`game ${gameId} checked, no change (turn ${preview.turns})`);
+  if (state && state.last_turns === turnKey && state.last_current_player === preview.currentPlayer) {
+    log.debug(`game ${gameId} checked, no change (turn ${turnLabel})`);
     return;
   }
 
@@ -69,14 +71,14 @@ export async function pollGame(deps: PollDeps, gameId: string): Promise<void> {
           `🔔 It is ${esc(civName)}'s (${code(s.user_id)}) turn in game ${code(gameId)}.${suffix}`,
           { markdown: true },
         );
-        log.info(`notified ${s.user_id} for game ${gameId} (turn ${preview.turns})`);
+        log.info(`notified ${s.user_id} for game ${gameId} (turn ${turnLabel})`);
       } catch (err) {
         await deps.alerter.telegramFailure(err);
       }
     }
   }
 
-  setGameState(deps.db, gameId, preview.turns, preview.currentPlayer);
+  setGameState(deps.db, gameId, turnKey, preview.currentPlayer);
 }
 
 export async function pollOnce(deps: PollDeps): Promise<void> {

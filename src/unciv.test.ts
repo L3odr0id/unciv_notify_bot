@@ -23,6 +23,19 @@ void test('decodePreview round-trips a base64+gzip JSON preview', () => {
   assert.equal(p.civilizations.length, 2);
 });
 
+void test('decodePreview accepts previews without turn counter', () => {
+  const p = decodePreview(
+    makeBlob({
+      currentPlayer: 'Austria',
+      currentTurnStartTime: 1700000000000,
+      civilizations: [{ civID: 'Austria', civName: 'Austria', playerId: 'uA', playerType: 'Human' }],
+    }),
+  );
+  assert.equal(p.turns, null);
+  assert.equal(p.currentPlayer, 'Austria');
+  assert.equal(p.civilizations[0].playerId, 'uA');
+});
+
 void test('decodePreview throws DecodeError on garbage', () => {
   assert.throws(() => decodePreview('not-base64-gzip'), DecodeError);
 });
