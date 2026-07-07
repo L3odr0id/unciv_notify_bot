@@ -26,7 +26,6 @@ Admins are the Telegram handles listed in `ADMIN_USERNAMES`.
 | --- | --- |
 | `/setinterval <seconds>` | Set the polling interval (min 10s). |
 | `/stats` | Aggregate stats: games, subscriptions, admins. |
-| `/subs` | Lists subscriptions for debug purpose. |
 | `/block <@handle\|chat_id>` | Block a user (by handle or chat id) from registering new subscriptions and remove their existing ones. |
 | `/unblock <@handle\|chat_id>` | Unblock a previously blocked user. |
 
