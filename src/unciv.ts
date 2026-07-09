@@ -168,19 +168,11 @@ export function formatTurnTimers(
   const lines: string[] = [];
   if (t.skipDeadlineMs !== null) {
     const r = t.skipDeadlineMs - now;
-    lines.push(
-      r <= 0
-        ? '⏭ Others can skip this turn now'
-        : `⏭ Others can skip this turn in: ${formatDuration(r)}`,
-    );
+    lines.push(`⏭ Skip in: ${r <= 0 ? 'can be skipped now' : formatDuration(r)}`);
   }
   if (t.totalDeadlineMs !== null) {
     const r = t.totalDeadlineMs - now;
-    lines.push(
-      r <= 0
-        ? '⏳ Others can force-resign this player now'
-        : `⏳ Others can force-resign this player in: ${formatDuration(r)}`,
-    );
+    lines.push(`⏳ Kick in: ${r <= 0 ? 'overdue' : formatDuration(r)}`);
   }
   return lines;
 }

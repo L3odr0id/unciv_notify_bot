@@ -155,7 +155,7 @@ void test('/list shows civ name, player id, started and deadline', async () => {
   await handleMessage(d, { chatId: 1, text: '/list' });
   assert.match(
     out[0],
-    /Game `g1`\nTurn 1\nRome's turn - started 30m ago\.\n {3}⏭ Others can skip this turn in: 1h\n {3}⏳ Others can force-resign this player in: 30m\nYou: Rome\n {3}⏱ Your time before force-resign: 1h/,
+    /Game `g1`\nTurn 1\nRome's turn - started 30m ago\.\n {3}⏭ Skip in: 1h\n {3}⏳ Kick in: 30m\nYou: Rome\n {3}⏱ Your time before force-resign: 1h/,
   );
 });
 
@@ -249,7 +249,7 @@ void test("/list shows subscriber's resign bank even when it is not their turn",
   await handleMessage(d, { chatId: 1, text: '/list' });
   assert.match(
     out[0],
-    /Rome's turn - started 30m ago\.\n {3}⏭ Others can skip this turn in: 1h\n {3}⏳ Others can force-resign this player in: 30m\nYou: Greece\n {3}⏱ Your time before force-resign: 2h 30m/,
+    /Rome's turn - started 30m ago\.\n {3}⏭ Skip in: 1h\n {3}⏳ Kick in: 30m\nYou: Greece\n {3}⏱ Your time before force-resign: 2h 30m/,
   );
 });
 
@@ -278,8 +278,8 @@ void test('/blame lists every player bank lowest first', async () => {
       'Game `g1`',
       'Turn 5',
       "Rome's turn - started 30m ago.",
-      '   ⏭ Others can skip this turn in: 1h',
-      '   ⏳ Others can force-resign this player in: 30m',
+      '   ⏭ Skip in: 1h',
+      '   ⏳ Kick in: 30m',
       'Time before force-resign (lowest first):',
       '   Rome: 1h ← current turn',
       '   Greece: 2h 30m',

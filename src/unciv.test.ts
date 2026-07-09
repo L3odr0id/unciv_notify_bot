@@ -219,15 +219,15 @@ void test('formatTurnTimers shows skip + kick', () => {
     1000,
   );
   assert.deepEqual(lines, [
-    '⏭ Others can skip this turn in: 1h',
-    '⏳ Others can force-resign this player in: 2h',
+    '⏭ Skip in: 1h',
+    '⏳ Kick in: 2h',
   ]);
 });
 
 void test('formatTurnTimers omits disabled timers', () => {
   assert.deepEqual(
     formatTurnTimers({ skipDeadlineMs: null, totalDeadlineMs: 1000 + 60 * 60000, recoveredPerTurnMin: 0 }, 1000),
-    ['⏳ Others can force-resign this player in: 1h'],
+    ['⏳ Kick in: 1h'],
   );
   assert.deepEqual(
     formatTurnTimers({ skipDeadlineMs: null, totalDeadlineMs: null, recoveredPerTurnMin: 0 }, 1000),
@@ -238,7 +238,7 @@ void test('formatTurnTimers omits disabled timers', () => {
 void test('formatTurnTimers shows skippable/overdue past the deadline', () => {
   assert.deepEqual(
     formatTurnTimers({ skipDeadlineMs: 500, totalDeadlineMs: 500, recoveredPerTurnMin: 0 }, 1000),
-    ['⏭ Others can skip this turn now', '⏳ Others can force-resign this player now'],
+    ['⏭ Skip in: can be skipped now', '⏳ Kick in: overdue'],
   );
 });
 
@@ -305,8 +305,8 @@ void test('formatBlame lists banks lowest first', () => {
       'Game `g1`',
       'Turn 5',
       "Rome's turn - started 30m ago.",
-      '   ⏭ Others can skip this turn in: 1h',
-      '   ⏳ Others can force-resign this player in: 30m',
+      '   ⏭ Skip in: 1h',
+      '   ⏳ Kick in: 30m',
       'Time before force-resign (lowest first):',
       '   Rome: 1h ← current turn',
       '   Greece: 2h 30m',
