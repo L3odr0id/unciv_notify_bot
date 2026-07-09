@@ -23,6 +23,8 @@ import {
   civForPlayer,
   formatDuration,
   formatTurnTimers,
+  playerResignBankMin,
+  formatBlame,
 } from './unciv';
 import { MIN_INTERVAL_SECONDS } from './constants';
 import { SendOpts, code, esc } from './tg';
@@ -53,6 +55,7 @@ export const USAGE = [
   'Commands:',
   '  /subscribe <game_id> <user_id> — get notified on your turn',
   '  /list — your subscriptions with live turn status',
+  '  /blame <game_id> — everyone’s force-resign time banks',
   '  /unsubscribe <game_id> [user_id] — stop notifications',
   '  /getinterval — current polling interval in seconds',
 ].join('\n');
@@ -119,10 +122,28 @@ export async function handleMessage(deps: HandlerDeps, msg: IncomingMsg): Promis
       turn += '.';
       const civName = civForPlayer(p, s.user_id);
       const you = civName ? esc(civName) : `player ${code(s.user_id)} (not in game)`;
+      const bankMin = playerResignBankMin(p, s.user_id);
+      const bankLine =
+        bankMin === null
+          ? ''
+          : `\n   ⏱ Your time before force-resign: ${formatDuration(bankMin * 60000)}`;
       const turnLine = p.turns === null ? 'Turn unknown' : `Turn ${p.turns}`;
-      return `Game ${code(s.game_id)}\n${turnLine}\n${turn}${timerBlock}\nYou: ${you}`;
+      return `Game ${code(s.game_id)}\n${turnLine}\n${turn}${timerBlock}\nYou: ${you}${bankLine}`;
     });
     return deps.reply(`Your subscriptions:\n\n${lines.join('\n\n')}`, { markdown: true });
+  }
+
+  if (text.startsWith('/blame')) {
+    const gameId = text.split(/\s+/)[1];
+    if (!gameId) return deps.reply('Usage: /blame <game_id>');
+    let preview: GamePreview;
+    try {
+      preview = await deps.fetchPreview(gameId);
+    } catch (e) {
+      if (e instanceof GameNotFound) return deps.reply(`Game ${code(gameId)} not found.`, { markdown: true });
+      return deps.reply('Could not reach the Unciv server, try again later.');
+    }
+    return deps.reply(formatBlame(preview, gameId, deps.now()), { markdown: true });
   }
 
   if (text.startsWith('/unsubscribe')) {

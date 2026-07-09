@@ -1,4 +1,5 @@
 import zlib from 'node:zlib';
+import { code, esc } from './tg';
 
 const SERVER = 'https://uncivserver.xyz';
 
@@ -138,13 +139,26 @@ export interface TurnTimers {
 }
 
 export function formatDuration(ms: number): string {
-  const totalMin = Math.floor(ms / 60000);
+  const totalMin = Math.max(0, Math.floor(ms / 60000));
   const days = Math.floor(totalMin / 1440);
   const hours = Math.floor((totalMin % 1440) / 60);
   const minutes = totalMin % 60;
-  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
-  if (hours > 0) return `${hours}h`;
+  if (days > 0) {
+    if (hours > 0 && minutes > 0) return `${days}d ${hours}h ${minutes}m`;
+    if (hours > 0) return `${days}d ${hours}h`;
+    if (minutes > 0) return `${days}d ${minutes}m`;
+    return `${days}d`;
+  }
+  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
   return `${minutes}m`;
+}
+
+/** Remaining force-resign bank for a player, in minutes; null if disabled or not in game. */
+export function playerResignBankMin(p: GamePreview, userId: string): number | null {
+  if (p.gameParameters.minutesUntilForceResign <= 0) return null;
+  const civ = p.civilizations.find((c) => c.playerId === userId);
+  if (!civ) return null;
+  return civ.playerMinutesBeforeForceResign;
 }
 
 export function formatTurnTimers(
@@ -154,11 +168,62 @@ export function formatTurnTimers(
   const lines: string[] = [];
   if (t.skipDeadlineMs !== null) {
     const r = t.skipDeadlineMs - now;
-    lines.push(`⏭ Skip in: ${r <= 0 ? 'can be skipped now' : formatDuration(r)}`);
+    lines.push(
+      r <= 0
+        ? '⏭ Others can skip this turn now'
+        : `⏭ Others can skip this turn in: ${formatDuration(r)}`,
+    );
   }
   if (t.totalDeadlineMs !== null) {
     const r = t.totalDeadlineMs - now;
-    lines.push(`⏳ Kick in: ${r <= 0 ? 'overdue' : formatDuration(r)}`);
+    lines.push(
+      r <= 0
+        ? '⏳ Others can force-resign this player now'
+        : `⏳ Others can force-resign this player in: ${formatDuration(r)}`,
+    );
   }
   return lines;
+}
+
+/** Civs with a multiplayer user id, lowest resign bank first. */
+export function blameBanks(p: GamePreview): { civName: string; playerId: string; bankMin: number; isCurrent: boolean }[] {
+  if (p.gameParameters.minutesUntilForceResign <= 0) return [];
+  return p.civilizations
+    .filter((c) => c.playerId)
+    .map((c) => ({
+      civName: c.civName,
+      playerId: c.playerId,
+      bankMin: c.playerMinutesBeforeForceResign,
+      isCurrent: c.civID === p.currentPlayer,
+    }))
+    .sort((a, b) => a.bankMin - b.bankMin || a.civName.localeCompare(b.civName));
+}
+
+export function formatBlame(p: GamePreview, gameId: string, now: number): string {
+  const turnLine = p.turns === null ? 'Turn unknown' : `Turn ${p.turns}`;
+  const ct = currentTurn(p);
+  const header: string[] = [`Game ${code(gameId)}`, turnLine];
+  if (ct) {
+    let turn = `${esc(ct.civName)}'s turn`;
+    if (ct.startedMs > 0) turn += ` - started ${formatDuration(now - ct.startedMs)} ago`;
+    header.push(turn + '.');
+    if (ct.startedMs > 0) {
+      for (const l of formatTurnTimers(ct, now)) header.push(`   ${l}`);
+    }
+  }
+  if (p.gameParameters.minutesUntilForceResign <= 0) {
+    header.push('Force-resign is disabled for this game.');
+    return header.join('\n');
+  }
+  const banks = blameBanks(p);
+  if (banks.length === 0) {
+    header.push('No human players found.');
+    return header.join('\n');
+  }
+  header.push('Time before force-resign (lowest first):');
+  for (const b of banks) {
+    const mark = b.isCurrent ? ' ← current turn' : '';
+    header.push(`   ${esc(b.civName)}: ${formatDuration(b.bankMin * 60000)}${mark}`);
+  }
+  return header.join('\n');
 }

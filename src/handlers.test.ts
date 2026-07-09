@@ -27,6 +27,7 @@ void test('formatDuration short forms', () => {
   assert.equal(formatDuration(0), '0m');
   assert.equal(formatDuration(5 * 60000), '5m');
   assert.equal(formatDuration(2 * 3600000), '2h');
+  assert.equal(formatDuration(2 * 3600000 + 15 * 60000), '2h 15m');
   assert.equal(formatDuration(3 * 86400000 + 4 * 3600000), '3d 4h');
 });
 
@@ -154,7 +155,7 @@ void test('/list shows civ name, player id, started and deadline', async () => {
   await handleMessage(d, { chatId: 1, text: '/list' });
   assert.match(
     out[0],
-    /Game `g1`\nTurn 1\nRome's turn - started 30m ago\.\n {3}⏭ Skip in: 1h\n {3}⏳ Kick in: 30m\nYou: Rome/,
+    /Game `g1`\nTurn 1\nRome's turn - started 30m ago\.\n {3}⏭ Others can skip this turn in: 1h\n {3}⏳ Others can force-resign this player in: 30m\nYou: Rome\n {3}⏱ Your time before force-resign: 1h/,
   );
 });
 
@@ -227,7 +228,70 @@ void test('/list shows started but omits deadline when force-resign disabled', a
   const { addSubscription } = await import('./db');
   addSubscription(d.db, 1, 'g1', 'uA', '');
   await handleMessage(d, { chatId: 1, text: '/list' });
-  assert.match(out[0], /Game `g1`\nTurn 1\nGreece's turn - started 30m ago\.\nYou: Greece/);
+  assert.match(out[0], /Game `g1`\nTurn 1\nGreece's turn - started 30m ago\.\nYou: Greece$/m);
+  assert.doesNotMatch(out[0], /force-resign|Your time before/);
+});
+
+void test("/list shows subscriber's resign bank even when it is not their turn", async () => {
+  const preview: GamePreview = {
+    turns: 1,
+    currentPlayer: 'civ1',
+    currentTurnStartTime: 1000,
+    gameParameters: { minutesUntilSkipTurn: 90, minutesUntilForceResign: 4320, minutesRecoveredPerTurn: 0 },
+    civilizations: [
+      { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 60 },
+      { civID: 'civ2', civName: 'Greece', playerId: 'uB', playerType: 'Human', playerMinutesBeforeForceResign: 150 },
+    ],
+  };
+  const { deps: d, out } = deps({ fetchPreview: () => Promise.resolve(preview) });
+  const { addSubscription } = await import('./db');
+  addSubscription(d.db, 1, 'g1', 'uB', '');
+  await handleMessage(d, { chatId: 1, text: '/list' });
+  assert.match(
+    out[0],
+    /Rome's turn - started 30m ago\.\n {3}⏭ Others can skip this turn in: 1h\n {3}⏳ Others can force-resign this player in: 30m\nYou: Greece\n {3}⏱ Your time before force-resign: 2h 30m/,
+  );
+});
+
+void test('/blame without game_id shows usage', async () => {
+  const { deps: d, out } = deps();
+  await handleMessage(d, { chatId: 1, text: '/blame' });
+  assert.match(out[0], /usage: \/blame/i);
+});
+
+void test('/blame lists every player bank lowest first', async () => {
+  const preview: GamePreview = {
+    turns: 5,
+    currentPlayer: 'civ1',
+    currentTurnStartTime: 1000,
+    gameParameters: { minutesUntilSkipTurn: 90, minutesUntilForceResign: 4320, minutesRecoveredPerTurn: 0 },
+    civilizations: [
+      { civID: 'civ1', civName: 'Rome', playerId: 'uA', playerType: 'Human', playerMinutesBeforeForceResign: 60 },
+      { civID: 'civ2', civName: 'Greece', playerId: 'uB', playerType: 'Human', playerMinutesBeforeForceResign: 150 },
+    ],
+  };
+  const { deps: d, out, opts } = deps({ fetchPreview: () => Promise.resolve(preview) });
+  await handleMessage(d, { chatId: 1, text: '/blame g1' });
+  assert.equal(
+    out[0],
+    [
+      'Game `g1`',
+      'Turn 5',
+      "Rome's turn - started 30m ago.",
+      '   ⏭ Others can skip this turn in: 1h',
+      '   ⏳ Others can force-resign this player in: 30m',
+      'Time before force-resign (lowest first):',
+      '   Rome: 1h ← current turn',
+      '   Greece: 2h 30m',
+    ].join('\n'),
+  );
+  assert.deepEqual(opts[0], { markdown: true });
+});
+
+void test('/blame reports game not found', async () => {
+  const { deps: d, out } = deps({ fetchPreview: () => Promise.reject(new GameNotFound('g1')) });
+  await handleMessage(d, { chatId: 1, text: '/blame g1' });
+  assert.match(out[0], /Game `g1` not found/);
 });
 
 void test('register stores normalized username', async () => {

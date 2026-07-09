@@ -7,6 +7,13 @@ Register a `game_id` + your Unciv multiplayer `user_id` and the bot polls the
 multiplayer server. The moment your civilization becomes the current player, it
 sends you a Telegram message.
 
+### Unciv turn timers
+
+- **Skip turn** — after a fixed number of minutes on the current turn, other players can skip it.
+- **Force resign** — each player has a personal time bank. After that many minutes on *their* turn, other players can force-resign them. On turn end Unciv updates it as `newBank = oldBank + timeSpent − recoverPerTurn` (capped at the game max; no recover if the turn was skipped).
+
+`/list` shows both for the current turn, plus your remaining resign bank. `/blame <game_id>` lists every player's resign bank.
+
 ## User commands
 
 | Command | Description |
@@ -14,7 +21,8 @@ sends you a Telegram message.
 | `/subscribe <game_id> <user_id>` | Register a subscription. Validates that `user_id` (your Unciv multiplayer User ID / UUID) is a player in the game via the live preview. The only way to subscribe. |
 | `/start` | Welcome message and basic instructions. |
 | `/help` | All available commands and formats. |
-| `/list` | Subscriptions with live turn status: current civ name, player id, how long ago the turn started, and the force-resign deadline (omitted when force-resign is disabled). |
+| `/list` | Subscriptions with live turn status: current civ, how long the turn has been open, when others can skip / force-resign the current player, and your personal remaining force-resign bank. |
+| `/blame <game_id>` | Live force-resign time banks for every player in the game (lowest first), plus current-turn skip/kick timers. |
 | `/unsubscribe <game_id> [user_id]` | Remove a subscription. Without `user_id`, removes all subscriptions for that game in this chat; with it, removes only that `(game, user)` pair. |
 | `/getinterval` | Current polling interval in seconds. |
 
