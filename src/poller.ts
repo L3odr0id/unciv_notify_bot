@@ -18,6 +18,8 @@ export interface PollDeps {
   fetchPreview: (gameId: string) => Promise<GamePreview>;
   send: (chatId: number, text: string, opts?: SendOpts) => Promise<void>;
   alerter: Alerter;
+  /** Re-notify period while a subscribed user's turn remains active. */
+  getNotifyPeriodMs: () => number;
   now?: () => number;
 }
 
@@ -53,32 +55,50 @@ export async function pollGame(deps: PollDeps, gameId: string): Promise<void> {
   const turnKey = preview.turns ?? preview.currentTurnStartTime;
   const turnLabel = preview.turns === null ? 'unknown' : String(preview.turns);
   const state = getGameState(deps.db, gameId);
-  if (state && state.last_turns === turnKey && state.last_current_player === preview.currentPlayer) {
-    log.debug(`game ${gameId} checked, no change (turn ${turnLabel})`);
-    return;
+  const turnUnchanged =
+    !!state && state.last_turns === turnKey && state.last_current_player === preview.currentPlayer;
+  const now = (deps.now ?? Date.now)();
+  const notifyPeriodMs = deps.getNotifyPeriodMs();
+
+  if (turnUnchanged) {
+    const lastNotified = state.last_notified_at ?? 0;
+    if (now - lastNotified < notifyPeriodMs) {
+      log.debug(`game ${gameId} checked, no change (turn ${turnLabel})`);
+      return;
+    }
   }
 
   const ct = currentTurn(preview);
   const civName = ct?.civName ?? 'Unknown';
-  const now = (deps.now ?? Date.now)();
   const timerLines = ct && ct.startedMs > 0 ? formatTurnTimers(ct, now) : [];
   const suffix = timerLines.length ? '\n' + timerLines.map((l) => `   ${l}`).join('\n') : '';
+  const reminder = turnUnchanged;
+  const lead = reminder ? '🔔 Reminder: it is' : '🔔 It is';
+
+  let anyNotified = false;
   for (const s of subscribersForGame(deps.db, gameId)) {
     if (isUsersTurn(preview, s.user_id)) {
       try {
         await deps.send(
           s.chat_id,
-          `🔔 It is ${esc(civName)}'s (${code(s.user_id)}) turn in game ${code(gameId)}.${suffix}`,
+          `${lead} ${esc(civName)}'s (${code(s.user_id)}) turn in game ${code(gameId)}.${suffix}`,
           { markdown: true },
         );
-        log.info(`notified ${s.user_id} for game ${gameId} (turn ${turnLabel})`);
+        anyNotified = true;
+        log.info(
+          `${reminder ? 're-notified' : 'notified'} ${s.user_id} for game ${gameId} (turn ${turnLabel})`,
+        );
       } catch (err) {
         await deps.alerter.telegramFailure(err);
       }
     }
   }
 
-  setGameState(deps.db, gameId, turnKey, preview.currentPlayer);
+  // Advance last_notified_at when we notified, or when a due check found nobody to ping
+  // (avoids re-entering the due path every poll). On a turn change with no matching
+  // subscriber, keep the previous timestamp.
+  const nextNotifiedAt = anyNotified || turnUnchanged ? now : (state?.last_notified_at ?? null);
+  setGameState(deps.db, gameId, turnKey, preview.currentPlayer, nextNotifiedAt);
 }
 
 export async function pollOnce(deps: PollDeps): Promise<void> {

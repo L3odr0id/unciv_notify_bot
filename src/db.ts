@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 CREATE TABLE IF NOT EXISTS game_state (
   game_id TEXT PRIMARY KEY,
   last_turns INTEGER,
-  last_current_player TEXT
+  last_current_player TEXT,
+  last_notified_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS admins (
   username TEXT PRIMARY KEY,
@@ -34,7 +35,18 @@ export function openDb(path: string): DB {
   const db = new Database(path);
   db.pragma('journal_mode = WAL');
   db.exec(SCHEMA);
+  migrateSchema(db);
   return db;
+}
+
+/** Additive migrations for existing on-disk DBs created before schema changes. */
+export function migrateSchema(db: DB, now = Date.now()): void {
+  const cols = db.prepare('PRAGMA table_info(game_state)').all() as { name: string }[];
+  if (!cols.some((c) => c.name === 'last_notified_at')) {
+    db.exec('ALTER TABLE game_state ADD COLUMN last_notified_at INTEGER');
+    // Seed existing rows so an upgrade does not immediately re-notify everyone.
+    db.prepare('UPDATE game_state SET last_notified_at = ? WHERE last_notified_at IS NULL').run(now);
+  }
 }
 
 export function addSubscription(
@@ -101,21 +113,33 @@ export function subscribersForGame(
     .all(gameId) as { chat_id: number; user_id: string }[];
 }
 
-export function getGameState(
-  db: DB,
-  gameId: string,
-): { last_turns: number; last_current_player: string } | undefined {
+export type GameStateRow = {
+  last_turns: number;
+  last_current_player: string;
+  last_notified_at: number | null;
+};
+
+export function getGameState(db: DB, gameId: string): GameStateRow | undefined {
   return db
-    .prepare('SELECT last_turns, last_current_player FROM game_state WHERE game_id = ?')
-    .get(gameId) as { last_turns: number; last_current_player: string } | undefined;
+    .prepare('SELECT last_turns, last_current_player, last_notified_at FROM game_state WHERE game_id = ?')
+    .get(gameId) as GameStateRow | undefined;
 }
 
-export function setGameState(db: DB, gameId: string, turns: number, currentPlayer: string): void {
+export function setGameState(
+  db: DB,
+  gameId: string,
+  turns: number,
+  currentPlayer: string,
+  lastNotifiedAt: number | null = null,
+): void {
   db.prepare(
-    `INSERT INTO game_state (game_id, last_turns, last_current_player)
-     VALUES (?, ?, ?)
-     ON CONFLICT(game_id) DO UPDATE SET last_turns = excluded.last_turns, last_current_player = excluded.last_current_player`,
-  ).run(gameId, turns, currentPlayer);
+    `INSERT INTO game_state (game_id, last_turns, last_current_player, last_notified_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(game_id) DO UPDATE SET
+       last_turns = excluded.last_turns,
+       last_current_player = excluded.last_current_player,
+       last_notified_at = excluded.last_notified_at`,
+  ).run(gameId, turns, currentPlayer, lastNotifiedAt);
 }
 
 export function deleteGame(db: DB, gameId: string): void {

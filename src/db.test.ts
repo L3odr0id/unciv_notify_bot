@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import Database from 'better-sqlite3';
 import {
   openDb,
   addSubscription,
@@ -13,6 +14,7 @@ import {
   getGameState,
   setGameState,
   deleteGame,
+  migrateSchema,
   upsertAdmin,
   adminChatIds,
   getSetting,
@@ -65,10 +67,47 @@ void test('removeSubscription with userId removes one', () => {
 void test('game_state get/set/delete', () => {
   const db = openDb(':memory:');
   assert.equal(getGameState(db, 'g1'), undefined);
-  setGameState(db, 'g1', 5, 'civ1');
-  assert.deepEqual(getGameState(db, 'g1'), { last_turns: 5, last_current_player: 'civ1' });
-  setGameState(db, 'g1', 6, 'civ2');
-  assert.deepEqual(getGameState(db, 'g1'), { last_turns: 6, last_current_player: 'civ2' });
+  setGameState(db, 'g1', 5, 'civ1', 1000);
+  assert.deepEqual(getGameState(db, 'g1'), {
+    last_turns: 5,
+    last_current_player: 'civ1',
+    last_notified_at: 1000,
+  });
+  setGameState(db, 'g1', 6, 'civ2', 2000);
+  assert.deepEqual(getGameState(db, 'g1'), {
+    last_turns: 6,
+    last_current_player: 'civ2',
+    last_notified_at: 2000,
+  });
+});
+
+void test('migrateSchema adds last_notified_at to legacy game_state without spamming', () => {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE game_state (
+      game_id TEXT PRIMARY KEY,
+      last_turns INTEGER,
+      last_current_player TEXT
+    );
+  `);
+  db.prepare('INSERT INTO game_state (game_id, last_turns, last_current_player) VALUES (?, ?, ?)').run(
+    'g1',
+    3,
+    'civ1',
+  );
+  const now = 1_700_000_000_000;
+  migrateSchema(db, now);
+  const row = db
+    .prepare('SELECT last_turns, last_current_player, last_notified_at FROM game_state WHERE game_id = ?')
+    .get('g1') as { last_turns: number; last_current_player: string; last_notified_at: number };
+  assert.deepEqual(row, { last_turns: 3, last_current_player: 'civ1', last_notified_at: now });
+  // Idempotent.
+  migrateSchema(db, now + 999);
+  const row2 = db
+    .prepare('SELECT last_notified_at FROM game_state WHERE game_id = ?')
+    .get('g1') as { last_notified_at: number };
+  assert.equal(row2.last_notified_at, now);
+  db.close();
 });
 
 void test('deleteGame removes subs and state', () => {

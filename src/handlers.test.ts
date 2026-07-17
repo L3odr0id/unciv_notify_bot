@@ -50,6 +50,7 @@ function deps(over: Partial<HandlerDeps> = {}): { deps: HandlerDeps; out: string
       db: openDb(':memory:'),
       adminSet: new Set(),
       fallbackIntervalSeconds: 60,
+      fallbackNotifyPeriodSeconds: 7200,
       now: () => 1000 + 30 * 60000, // 30 min into the turn
       fetchPreview: () => Promise.resolve(preview),
       reply: (t, o) => {
@@ -134,6 +135,31 @@ void test('/setinterval rejects below minimum', async () => {
   await handleMessage(d, { chatId: 555, username: 'alice', text: '/setinterval 5' });
   assert.equal(getSetting(d.db, 'poll_interval_seconds'), undefined);
   assert.match(out[0], /at least 10/i);
+});
+
+void test('/setnotifyperiod persists for admin and is rejected for non-admin', async () => {
+  const { deps: d, out } = deps({ adminSet: new Set(['alice']) });
+  await handleMessage(d, { chatId: 9, username: 'eve', text: '/setnotifyperiod 3600' });
+  assert.equal(getSetting(d.db, 'notify_period_seconds'), undefined);
+  assert.match(out[0], /admin/i);
+  await handleMessage(d, { chatId: 555, username: 'alice', text: '/setnotifyperiod 3600' });
+  assert.equal(getSetting(d.db, 'notify_period_seconds'), '3600');
+});
+
+void test('/getnotifyperiod returns fallback when unset, then stored value', async () => {
+  const { deps: d, out } = deps({ fallbackNotifyPeriodSeconds: 7200 });
+  await handleMessage(d, { chatId: 1, text: '/getnotifyperiod' });
+  assert.match(out[0], /7200s/);
+  setSetting(d.db, 'notify_period_seconds', '3600');
+  await handleMessage(d, { chatId: 1, text: '/getnotifyperiod' });
+  assert.match(out[1], /3600s/);
+});
+
+void test('/setnotifyperiod rejects below minimum', async () => {
+  const { deps: d, out } = deps({ adminSet: new Set(['alice']) });
+  await handleMessage(d, { chatId: 555, username: 'alice', text: '/setnotifyperiod 30' });
+  assert.equal(getSetting(d.db, 'notify_period_seconds'), undefined);
+  assert.match(out[0], /at least 60/i);
 });
 
 void test('/stats for admin returns counts', async () => {

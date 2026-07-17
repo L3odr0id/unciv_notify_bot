@@ -25,6 +25,7 @@ sends you a Telegram message.
 | `/blame <game_id>` | Live force-resign time banks for every player in the game (lowest first), plus current-turn skip/kick timers. |
 | `/unsubscribe <game_id> [user_id]` | Remove a subscription. Without `user_id`, removes all subscriptions for that game in this chat; with it, removes only that `(game, user)` pair. |
 | `/getinterval` | Current polling interval in seconds. |
+| `/getnotifyperiod` | Current re-notify period in seconds (how long between reminders while your turn is still open). |
 
 ## Admin commands
 
@@ -33,6 +34,7 @@ Admins are the Telegram handles listed in `ADMIN_USERNAMES`.
 | Command | Description |
 | --- | --- |
 | `/setinterval <seconds>` | Set the polling interval (min 10s). |
+| `/setnotifyperiod <seconds>` | Set the re-notify period while a turn remains open (min 60s, default 7200s / 2h). |
 | `/stats` | Aggregate stats: games, subscriptions, admins. |
 | `/block <@handle\|chat_id>` | Block a user (by handle or chat id) from registering new subscriptions and remove their existing ones. |
 | `/unblock <@handle\|chat_id>` | Unblock a previously blocked user. |
@@ -60,6 +62,8 @@ game client does:
    against each subscriber's `user_id`.
 4. Notifies on the transition **into** a user's turn — detected when
    `(turns, currentPlayer)` changes from the last seen value for that game.
+   While that turn remains open, re-notifies after the configured notify period
+   (default 2h) based on `last_notified_at` in `game_state`.
 
 Default server: `https://uncivserver.xyz`. Games shared by multiple subscribers
 are fetched once per poll.

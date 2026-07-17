@@ -26,7 +26,7 @@ import {
   playerResignBankMin,
   formatBlame,
 } from './unciv';
-import { MIN_INTERVAL_SECONDS } from './constants';
+import { MIN_INTERVAL_SECONDS, MIN_NOTIFY_PERIOD_SECONDS } from './constants';
 import { SendOpts, code, esc } from './tg';
 import { log } from './log';
 
@@ -58,6 +58,7 @@ export const USAGE = [
   '  /blame <game_id> — everyone’s force-resign time banks',
   '  /unsubscribe <game_id> [user_id] — stop notifications',
   '  /getinterval — current polling interval in seconds',
+  '  /getnotifyperiod — re-notify period while your turn is still open',
 ].join('\n');
 
 export interface IncomingMsg {
@@ -70,6 +71,7 @@ export interface HandlerDeps {
   db: DB;
   adminSet: Set<string>;
   fallbackIntervalSeconds: number;
+  fallbackNotifyPeriodSeconds: number;
   now: () => number;
   fetchPreview: (gameId: string) => Promise<GamePreview>;
   reply: (text: string, opts?: SendOpts) => Promise<void>;
@@ -170,6 +172,26 @@ export async function handleMessage(deps: HandlerDeps, msg: IncomingMsg): Promis
     setSetting(deps.db, 'poll_interval_seconds', String(seconds));
     log.info(`admin ${msg.chatId} set poll interval to ${seconds}s`);
     return deps.reply(`Poll interval set to ${seconds}s (applies next cycle).`);
+  }
+
+  if (text === '/getnotifyperiod') {
+    const stored = getSetting(deps.db, 'notify_period_seconds');
+    const chosen = Number.isFinite(Number(stored)) ? Number(stored) : deps.fallbackNotifyPeriodSeconds;
+    const seconds = Math.max(chosen, MIN_NOTIFY_PERIOD_SECONDS);
+    return deps.reply(`Notify period: ${seconds}s.`);
+  }
+
+  if (text.startsWith('/setnotifyperiod')) {
+    if (!isAdmin(deps, msg)) return deps.reply('Admin only.');
+    const seconds = Number(text.split(/\s+/)[1]);
+    if (!Number.isInteger(seconds) || seconds < MIN_NOTIFY_PERIOD_SECONDS) {
+      return deps.reply(
+        `Notify period must be an integer of at least ${MIN_NOTIFY_PERIOD_SECONDS} seconds.`,
+      );
+    }
+    setSetting(deps.db, 'notify_period_seconds', String(seconds));
+    log.info(`admin ${msg.chatId} set notify period to ${seconds}s`);
+    return deps.reply(`Notify period set to ${seconds}s (applies next cycle).`);
   }
 
   if (text === '/stats') {

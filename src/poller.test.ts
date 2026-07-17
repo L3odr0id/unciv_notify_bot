@@ -19,7 +19,7 @@ const preview = (currentPlayer: string, turns = 1): GamePreview => ({
   ],
 });
 
-function setup(fetchPreview: PollDeps['fetchPreview']) {
+function setup(fetchPreview: PollDeps['fetchPreview'], notifyPeriodMs = 7200_000) {
   const sent: { chatId: number; text: string; opts?: SendOpts }[] = [];
   const send = (chatId: number, text: string, opts?: SendOpts) => {
     sent.push({ chatId, text, opts });
@@ -27,7 +27,17 @@ function setup(fetchPreview: PollDeps['fetchPreview']) {
   };
   const db = openDb(':memory:');
   const alerter = new Alerter({ send, adminChatIds: () => [], failThreshold: 2 });
-  return { db, sent, deps: { db, fetchPreview, send, alerter } as PollDeps };
+  return {
+    db,
+    sent,
+    deps: {
+      db,
+      fetchPreview,
+      send,
+      alerter,
+      getNotifyPeriodMs: () => notifyPeriodMs,
+    } as PollDeps,
+  };
 }
 
 void test('notifies only the subscriber whose turn it is', async () => {
@@ -38,7 +48,10 @@ void test('notifies only the subscriber whose turn it is', async () => {
   assert.equal(sent.length, 1);
   assert.equal(sent[0].chatId, 10);
   assert.match(sent[0].text, /It is Rome's \(`uA`\) turn in game `g1`/);
-  assert.deepEqual(getGameState(db, 'g1'), { last_turns: 1, last_current_player: 'civ1' });
+  const state = getGameState(db, 'g1');
+  assert.equal(state?.last_turns, 1);
+  assert.equal(state?.last_current_player, 'civ1');
+  assert.equal(typeof state?.last_notified_at, 'number');
 });
 
 void test('notification includes skip and total timers when enabled', async () => {
@@ -78,13 +91,51 @@ void test('notification omits deadline when force-resign disabled', async () => 
   assert.equal(sent[0].text, "🔔 It is Rome's (`uA`) turn in game `g1`.");
 });
 
-void test('no notification when state unchanged', async () => {
+void test('no notification when state unchanged and within notify period', async () => {
   const { db, sent, deps } = setup(() => Promise.resolve(preview('civ1')));
   addSubscription(db, 10, 'g1', 'uA');
   await pollGame(deps, 'g1'); // first time notifies + stores
   assert.equal(sent.length, 1);
   await pollGame(deps, 'g1'); // unchanged → silent
   assert.equal(sent.length, 1);
+});
+
+void test('re-notifies when notify period elapsed while turn unchanged', async () => {
+  let now = 1_000_000;
+  const { db, sent, deps } = setup(() => Promise.resolve(preview('civ1')), 3_600_000);
+  deps.now = () => now;
+  addSubscription(db, 10, 'g1', 'uA');
+  await pollGame(deps, 'g1');
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /^🔔 It is/);
+
+  now += 3_600_000 - 1; // still inside the period
+  await pollGame(deps, 'g1');
+  assert.equal(sent.length, 1);
+
+  now += 1; // exactly at period → due
+  await pollGame(deps, 'g1');
+  assert.equal(sent.length, 2);
+  assert.match(sent[1].text, /^🔔 Reminder: it is/);
+});
+
+void test('turn change notifies immediately even within notify period', async () => {
+  let current = 'civ1';
+  let now = 1_000_000;
+  const { db, sent, deps } = setup(() => Promise.resolve(preview(current)), 3_600_000);
+  deps.now = () => now;
+  addSubscription(db, 10, 'g1', 'uA');
+  addSubscription(db, 20, 'g1', 'uB');
+  await pollGame(deps, 'g1');
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].chatId, 10);
+
+  now += 60_000; // well within period
+  current = 'civ2';
+  await pollGame(deps, 'g1');
+  assert.equal(sent.length, 2);
+  assert.equal(sent[1].chatId, 20);
+  assert.match(sent[1].text, /^🔔 It is/);
 });
 
 void test('404 notifies all subscribers and deletes the game', async () => {
@@ -114,6 +165,7 @@ void test('repeated failures reach the alerter threshold', async () => {
     fetchPreview: () => Promise.reject(new Error('network down')),
     send: () => Promise.resolve(),
     alerter,
+    getNotifyPeriodMs: () => 7200_000,
   } as PollDeps;
   await pollGame(deps, 'g1');
   assert.equal(alerts.length, 0);
@@ -207,6 +259,7 @@ void test('startPoller: pollOnce error routes to alerter.fatal', async () => {
     fetchPreview: () => Promise.resolve(preview('civ1')),
     send: () => Promise.resolve(),
     alerter,
+    getNotifyPeriodMs: () => 7200_000,
   } as PollDeps;
 
   const { stop } = startPoller(deps, () => 1);
